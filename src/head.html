@@ -1,0 +1,368 @@
+<title>みなみ町ドライブ教習</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Dela+Gothic+One&family=Saira+Condensed:wght@500;700&display=swap">
+<style>
+/* Layout: full-bleed 3D road view; HUD clusters sit at the screen edges like an instrument panel; menus are a driving-school record card (教習原簿) with hanko stamps. */
+:root{
+  --asphalt:#161b20; --asphalt-2:#232a31;
+  --hud-bg:rgba(13,17,21,.74); --hud-line:rgba(255,255,255,.14); --hud-fg:#f1f4f2; --hud-dim:#9fb0a8;
+  --paper:#eef2ec; --paper-2:#e2e9e2; --paper-ink:#1c2622; --rule:#b9c7bd;
+  --hanko:#c8342c; --sign-blue:#1f55a5; --go:#00a497; --amber:#f0a500; --stop:#d42a2a; --ok:#2e9e5b;
+  --f-display:"Dela Gothic One","Hiragino Sans","Yu Gothic",sans-serif;
+  --f-ui:"BIZ UDPGothic","Hiragino Sans","Yu Gothic","Meiryo",sans-serif;
+  --f-num:"Saira Condensed","DIN Alternate","Arial Narrow",sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+.card{color-scheme:light}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--asphalt);color:var(--hud-fg);font-family:var(--f-ui);-webkit-tap-highlight-color:transparent}
+body{position:fixed;inset:0;touch-action:none;user-select:none;-webkit-user-select:none}
+#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+button{font-family:var(--f-ui);cursor:pointer}
+button:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.hud{position:fixed;pointer-events:none;z-index:5}
+.hud *{pointer-events:auto}
+.panel{background:var(--hud-bg);border:1px solid var(--hud-line);border-radius:10px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+/* top-left: course + navigation */
+#hudTL{top:calc(10px + env(safe-area-inset-top,0px));left:12px;display:flex;flex-direction:column;gap:8px;width:min(250px,40vw)}
+#stageChip{padding:6px 10px;font-size:12px;color:var(--hud-dim);letter-spacing:.04em}
+#stageChip b{color:var(--hud-fg);font-weight:700;display:block;font-size:14px;letter-spacing:0}
+#nav{display:flex;gap:10px;align-items:center;padding:8px 10px}
+#navArrow{width:46px;height:46px;flex:none}
+#navDist{font-family:var(--f-num);font-size:30px;font-weight:700;line-height:1}
+#navDist small{font-size:14px;margin-left:2px;color:var(--hud-dim)}
+#navText{font-size:13px;line-height:1.35}
+#mini{width:100%;aspect-ratio:1;max-width:170px;border-radius:10px}
+/* top-right */
+#hudTR{top:calc(10px + env(safe-area-inset-top,0px));right:12px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+#scoreBox{padding:6px 12px;text-align:right}
+#scoreBox .lbl{font-size:11px;color:var(--hud-dim);letter-spacing:.06em}
+#scoreVal{font-family:var(--f-num);font-size:34px;font-weight:700;line-height:1}
+#timeVal{font-family:var(--f-num);font-size:15px;color:var(--hud-dim)}
+.iconRow{display:flex;gap:6px}
+.ibtn{width:40px;height:40px;border-radius:9px;border:1px solid var(--hud-line);background:var(--hud-bg);color:var(--hud-fg);font-size:13px;font-weight:700;display:grid;place-items:center;padding:0}
+.ibtn svg{width:20px;height:20px}
+/* mirrors (WebGL draws inside these frames) */
+.mirror{position:fixed;border:3px solid #0b0d0f;border-radius:14px;box-shadow:0 2px 10px rgba(0,0,0,.45);pointer-events:none;z-index:4}
+#mirRear{top:calc(8px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);width:min(300px,34vw);height:min(84px,10vw)}
+#mirL{left:10px;top:52%;width:min(150px,17vw);height:min(92px,11vw);border-radius:18px 10px 10px 22px}
+#mirR{right:10px;top:52%;width:min(150px,17vw);height:min(92px,11vw);border-radius:10px 18px 22px 10px}
+#rearCam{left:50%;transform:translateX(-50%);bottom:calc(118px + env(safe-area-inset-bottom,0px));width:min(330px,44vw);height:min(220px,30vw);border-radius:8px;border-color:#222;z-index:6}
+#rearGuide{position:absolute;inset:0;width:100%;height:100%}
+.camLbl{position:absolute;left:0;right:0;top:4px;text-align:center;font-size:10px;color:#fff;text-shadow:0 1px 2px #000}
+body.touch #rearCam{bottom:calc(184px + env(safe-area-inset-bottom,0px))}
+/* 狭い画面：バックモニターはルームミラーの位置に出し、教官の案内をその下へ */
+@media (max-height:520px){
+  #rearCam,body.touch #rearCam{top:calc(8px + env(safe-area-inset-top,0px));bottom:auto;width:min(270px,36vw);height:min(150px,38vh)}
+  body.touch.revcam #coach{top:calc(min(150px,38vh) + 16px + env(safe-area-inset-top,0px))}
+}
+@media (orientation:portrait) and (max-width:620px){
+  #rearCam,body.touch #rearCam{top:calc(156px + env(safe-area-inset-top,0px));bottom:auto;width:76vw;height:44vw}
+  body.touch.revcam #coach{top:calc(164px + 44vw + env(safe-area-inset-top,0px))}
+  body.revcam #toasts{top:calc(232px + 44vw + env(safe-area-inset-top,0px))}
+}
+/* cluster */
+#cluster{bottom:calc(14px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:8px 16px}
+#speedWrap{text-align:center;min-width:92px}
+#speedVal{font-family:var(--f-num);font-size:54px;font-weight:700;line-height:.9;font-variant-numeric:tabular-nums}
+#speedUnit{font-size:11px;color:var(--hud-dim);letter-spacing:.08em}
+#limitSign{width:58px;height:58px;border-radius:50%;background:#fff;border:6px solid var(--stop);display:grid;place-items:center;font-family:var(--f-num);font-weight:700;font-size:26px;color:var(--sign-blue);position:relative}
+#limitSign.over{animation:pulse .6s infinite alternate}
+#limitTag{position:absolute;bottom:-17px;left:50%;transform:translateX(-50%);font-family:var(--f-ui);font-size:10px;color:var(--hud-fg);white-space:nowrap;background:var(--hud-bg);padding:1px 5px;border-radius:5px}
+@keyframes pulse{to{box-shadow:0 0 0 6px rgba(212,42,42,.55)}}
+#lamps{display:grid;grid-template-columns:repeat(3,auto);gap:4px 8px;font-size:11px;align-items:center}
+.lamp{opacity:.22;font-weight:700;display:flex;align-items:center;gap:3px}
+.lamp.on{opacity:1}
+.lamp.blk{color:var(--go)}
+.lamp.haz{color:var(--stop)}
+.lamp.warn{color:var(--amber)}
+#gearBox{font-family:var(--f-num);font-size:20px;font-weight:700;letter-spacing:.12em;color:var(--hud-dim)}
+#gearBox b{color:var(--hud-fg)}
+/* coach */
+#coach{left:12px;bottom:calc(150px + env(safe-area-inset-bottom,0px));max-width:min(360px,46vw);display:flex;gap:8px;align-items:flex-start;padding:9px 12px;font-size:14px;line-height:1.5;transition:opacity .3s}
+#coach .who{flex:none;font-size:11px;font-weight:700;color:var(--panel-ink,#0d1114);background:var(--amber);border-radius:5px;padding:2px 6px;margin-top:2px}
+#coach.hide{opacity:0}
+/* toasts */
+#toasts{right:12px;top:30%;display:flex;flex-direction:column;gap:8px;width:min(330px,44vw)}
+.toast{padding:9px 12px;border-left:5px solid var(--stop);font-size:13px;line-height:1.5;animation:tin .25s ease-out}
+.toast.good{border-left-color:var(--ok)}
+.toast.info{border-left-color:var(--sign-blue)}
+.toast b{display:block;font-size:14px}
+.toast .pt{float:right;font-family:var(--f-num);font-size:18px;font-weight:700;color:var(--stop);margin-left:8px}
+.toast.good .pt{color:var(--ok)}
+@keyframes tin{from{transform:translateX(30px);opacity:0}}
+/* bottom controls */
+#ctrlBar{bottom:calc(14px + env(safe-area-inset-bottom,0px));right:12px;display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;max-width:min(360px,40vw)}
+.cbtn{min-width:52px;height:44px;padding:0 8px;border-radius:9px;border:1px solid var(--hud-line);background:var(--hud-bg);color:var(--hud-fg);font-size:12px;font-weight:700;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.15}
+.cbtn kbd{font-family:var(--f-num);font-size:11px;color:var(--hud-dim);font-weight:500}
+.cbtn.on{background:var(--go);color:#062320;border-color:transparent}
+.cbtn.on kbd{color:#0b3a35}
+.cbtn.alert{background:var(--amber);color:#2a1a00}
+#touchL{left:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));width:150px;height:150px}
+#wheel{width:150px;height:150px;border-radius:50%;touch-action:none}
+#touchR{right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;gap:10px;align-items:flex-end}
+.pedal{width:62px;border-radius:12px;border:1px solid var(--hud-line);background:var(--hud-bg);color:var(--hud-fg);font-weight:700;font-size:13px;touch-action:none;display:flex;align-items:flex-end;justify-content:center;padding-bottom:10px}
+#pedBrake{height:96px;width:84px}
+#pedAcc{height:128px}
+.pedal.down{background:var(--hud-fg);color:var(--asphalt)}
+/* 次に押すボタン（黄色く光る）。キーボードではキー名、タッチでは「タップ」を上に出す */
+.cbtn,.pedal{position:relative}
+.cbtn small{display:none}
+.cbtn.hint,.pedal.hint{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber);animation:hintPulse 1s ease-in-out infinite}
+@keyframes hintPulse{50%{box-shadow:0 0 0 2px var(--amber),0 0 18px 6px rgba(240,165,0,.8)}}
+.cbtn.hint::after,.pedal.hint::after{content:attr(data-key) 'キー';position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:var(--amber);color:#2a1a00;font-size:10px;font-weight:700;line-height:1;padding:3px 6px;border-radius:9px;white-space:nowrap;pointer-events:none;z-index:1}
+body.touch .cbtn.hint::after{content:'タップ'}
+.pedal.hint::after,body.touch .pedal.hint::after{content:'押し続ける';top:-13px}
+/* タッチ操作のレイアウト：ボタンはハンドルとペダルの間に2段×5列。横にスクロールさせない */
+#gearBox{white-space:nowrap}
+body.touch #ctrlBar{left:144px;right:162px;bottom:calc(10px + env(safe-area-inset-bottom,0px));transform:none;margin:0 auto;width:auto;max-width:480px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+body.touch .cbtn{min-width:0;width:100%;height:44px;padding:0 3px;font-size:12px;white-space:nowrap}
+body.touch .cbtn kbd{display:none}
+body.touch .cbtn small{display:block;font-size:9px;font-weight:400;color:var(--hud-dim);margin-top:2px}
+body.touch .cbtn.on small{color:#0b3a35}
+body.touch #gearBox{font-size:17px;letter-spacing:.06em}
+body.touch #cluster{bottom:calc(114px + env(safe-area-inset-bottom,0px));padding:4px 12px;gap:10px}
+body.touch #lamps{display:none}
+body.touch #speedVal{font-size:36px}
+body.touch #limitSign{width:44px;height:44px;font-size:19px;border-width:5px}
+body.touch #limitTag{bottom:-14px}
+body.touch #coach{left:50%;transform:translateX(-50%);top:calc(min(84px,10vw) + 18px + env(safe-area-inset-top,0px));bottom:auto;max-width:min(440px,46vw);font-size:12px;padding:6px 10px}
+body.touch #touchL,body.touch #wheel{width:120px;height:120px}
+body.touch #pedBrake{height:84px;width:72px}
+body.touch #pedAcc{height:112px;width:58px}
+body.touch #phone{bottom:calc(174px + env(safe-area-inset-bottom,0px))}
+@media (max-width:700px){
+  #hudTL{width:min(190px,46vw)} #mini{max-width:120px} #navDist{font-size:24px} #navArrow{width:36px;height:36px}
+  #speedVal{font-size:40px} #limitSign{width:46px;height:46px;font-size:20px;border-width:5px}
+  #toasts{top:auto;bottom:calc(250px + env(safe-area-inset-bottom,0px));width:min(300px,70vw)}
+  #coach{font-size:12px}
+}
+@media (max-height:520px){
+  #stageChip{display:none} #hudTL{width:min(210px,30vw);gap:6px} #mini{max-width:96px}
+  #nav{padding:5px 8px;gap:6px} #navArrow{width:30px;height:30px} #navDist{font-size:20px} #navText{font-size:11px}
+  #mirRear{width:min(250px,30vw);height:56px} #mirL,#mirR{top:44%;width:110px;height:62px}
+  #toasts{top:calc(150px + env(safe-area-inset-top,0px));bottom:auto;width:min(280px,34vw)} .toast{font-size:11px;padding:6px 9px} .toast b{font-size:12px}
+  #scoreVal{font-size:26px} .ibtn{width:36px;height:36px}
+  body.touch #coach{top:calc(74px + env(safe-area-inset-top,0px));left:calc(min(210px,30vw) + 22px);right:150px;transform:none;max-width:none}
+}
+@media (max-height:360px){#mini{display:none}}
+@media (orientation:landscape) and (max-width:600px){
+  body.touch #ctrlBar{left:122px;right:140px;gap:4px}
+  body.touch .cbtn{height:38px;font-size:10px}
+  body.touch .cbtn small{display:none}
+  body.touch #touchL,body.touch #wheel{width:100px;height:100px}
+  body.touch #pedBrake{width:60px;height:72px} body.touch #pedAcc{width:50px;height:96px}
+  body.touch #cluster{bottom:calc(92px + env(safe-area-inset-bottom,0px))}
+}
+@media (orientation:portrait) and (max-width:620px){
+  body.touch #ctrlBar{left:8px;right:8px;max-width:none;bottom:calc(146px + env(safe-area-inset-bottom,0px))}
+  body.touch #cluster{bottom:calc(250px + env(safe-area-inset-bottom,0px))}
+  body.touch #phone{bottom:calc(310px + env(safe-area-inset-bottom,0px))}
+  #mini{display:none} #hudTL{width:min(200px,calc(100vw - 170px))}
+  #mirRear{top:calc(156px + env(safe-area-inset-top,0px));width:64vw;height:50px}
+  body.touch #coach{top:calc(216px + env(safe-area-inset-top,0px));left:12px;right:12px;transform:none;max-width:none}
+  #toasts{top:calc(280px + env(safe-area-inset-top,0px));bottom:auto;right:12px;left:12px;width:auto}
+}
+/* 画面の操作ガイド（スポットライト＋吹き出し） */
+#guide{position:fixed;inset:0;z-index:25;touch-action:none}
+#guide.dim{background:rgba(8,11,14,.72)}
+#guide .spot{position:fixed;border:3px solid var(--amber);border-radius:14px;box-shadow:0 0 0 9999px rgba(8,11,14,.72);pointer-events:none}
+#guide .tip{position:fixed;width:min(290px,calc(100vw - 16px));box-sizing:border-box;background:var(--paper);color:var(--paper-ink);border-radius:10px;padding:10px 14px 12px;box-shadow:0 10px 30px rgba(0,0,0,.5);color-scheme:light;animation:gin .2s ease-out}
+@keyframes gin{from{opacity:0;transform:translateY(6px)}}
+#guide .st{font-size:11px;letter-spacing:.12em;color:#55665d}
+#guide h3{font-family:var(--f-display);font-weight:400;font-size:18px;margin:2px 0 4px}
+#guide p{margin:0;font-size:13px;line-height:1.6}
+#guide .btnRow{margin-top:10px;justify-content:flex-end}
+#guide .go,#guide .ghost{padding:7px 12px;font-size:13px}
+/* overlays: record card */
+.overlay{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:16px;padding-block:calc(16px + env(safe-area-inset-top,0px)) calc(16px + env(safe-area-inset-bottom,0px));background:linear-gradient(90deg,rgba(10,13,16,.78),rgba(10,13,16,.35));overflow:auto}
+.card{background:var(--paper);color:var(--paper-ink);border-radius:6px;box-shadow:0 18px 50px rgba(0,0,0,.5);width:min(760px,100%);max-height:100%;overflow:auto;position:relative}
+.card header{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;padding:18px 22px 12px;border-bottom:2px solid var(--paper-ink);flex-wrap:wrap}
+.card h1{font-family:var(--f-display);font-weight:400;font-size:clamp(26px,5vw,40px);margin:0;letter-spacing:.02em;text-wrap:balance}
+.card h2{font-family:var(--f-display);font-weight:400;font-size:24px;margin:0}
+.eyebrow{font-size:12px;letter-spacing:.14em;color:#55665d}
+.plate{border:2px solid var(--paper-ink);padding:4px 10px;font-weight:700;font-size:13px;background:#fff;letter-spacing:.08em}
+.card .body{padding:14px 22px 20px}
+.lede{font-size:14px;line-height:1.7;margin:0 0 12px;max-width:60ch}
+table.genbo{width:100%;border-collapse:collapse;font-size:14px}
+.genbo th{white-space:nowrap;font-size:11px;letter-spacing:.08em;color:#55665d;text-align:left;font-weight:400;border-bottom:1px solid var(--rule);padding:4px 6px}
+.genbo td{border-bottom:1px solid var(--rule);padding:8px 6px;vertical-align:middle}
+.genbo tr.row{cursor:pointer}
+.genbo tr.row:hover td{background:var(--paper-2)}
+.genbo .no{font-family:var(--f-num);font-size:20px;font-weight:700;width:34px}
+.genbo .ttl b{display:block;font-size:15px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 12px}
+.tab{display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:#fff;color:var(--paper-ink);border:1.5px solid var(--rule);border-radius:6px;padding:6px 12px 5px;font-family:var(--f-ui);cursor:pointer;min-width:84px}
+.tab b{font-size:14px}.tab small{font-size:10.5px;color:#55665d;letter-spacing:.02em}
+.tab[aria-selected="true"]{background:var(--paper-ink);color:var(--paper);border-color:var(--paper-ink)}.tab[aria-selected="true"] small{color:#c9d6cf}
+.tab:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+@media (max-width:560px){.tabs{display:grid;grid-template-columns:repeat(3,1fr)}.tab{min-width:0;padding:6px 8px}}
+.genbo .ttl span{font-size:12px;color:#4d5d55;line-height:1.5}
+.envPick{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}.envPick .tab{min-width:0;padding:7px 12px}
+.genbo .best{font-family:var(--f-num);font-size:18px;text-align:right;white-space:nowrap}
+.stampCell{width:64px;text-align:center}
+.stamp{display:inline-grid;place-items:center;width:52px;height:52px;border-radius:50%;border:3px solid var(--hanko);color:var(--hanko);font-family:var(--f-display);font-size:14px;transform:rotate(-12deg);opacity:.9;line-height:1.05;text-align:center}
+.stamp.big{width:120px;height:120px;font-size:34px;border-width:6px}
+.stamp.ng{border-color:#5d6a64;color:#5d6a64}
+.go{background:var(--paper-ink);color:var(--paper);border:0;border-radius:6px;padding:9px 16px;font-size:14px;font-weight:700}
+.ghost{background:transparent;color:var(--paper-ink);border:1.5px solid var(--paper-ink);border-radius:6px;padding:8px 14px;font-size:14px;font-weight:700}
+.btnRow{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.small{font-size:12px;color:#4d5d55;line-height:1.6}
+.card a{color:var(--sign-blue);text-underline-offset:2px}
+.vlist{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+.vlist li{border-left:4px solid var(--stop);background:#fff;padding:8px 10px;font-size:13px;line-height:1.6}
+.vlist li.good{border-left-color:var(--ok)}
+.vlist li.info{border-left-color:var(--sign-blue)}
+.choices{display:flex;flex-direction:column;gap:8px;margin-top:4px}.choice{text-align:left;font-weight:600;line-height:1.5}.choice.ng{opacity:.5;text-decoration:line-through}.choice.okc{border-color:var(--ok);background:#e6f3ec}
+.fb{margin-top:10px}.fb p{margin:0 0 6px;font-size:13px;line-height:1.6}.fb .okt{color:#11683f;font-weight:700}.fb .ngt{color:#b3261e;font-weight:700}
+.vlist li b{font-size:14px}
+.vlist li .law{display:block;font-size:12px;color:#4d5d55}
+.resTop{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.resScore{font-family:var(--f-num);font-size:64px;font-weight:700;line-height:1}
+.resScore small{font-size:20px}
+.opt{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--rule);font-size:14px}
+.opt input{width:20px;height:20px;accent-color:var(--sign-blue)}
+.keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px;font-size:13px}
+.keys kbd{font-family:var(--f-num);font-weight:700;border:1px solid var(--paper-ink);border-radius:4px;padding:0 5px;background:#fff}
+.hh{font-size:15px;margin:16px 0 6px}
+.card .body>.hh:first-child{margin-top:0}
+.tlist{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:13px;line-height:1.6}
+.tlist li{background:#fff;border-left:4px solid var(--sign-blue);padding:6px 10px}
+.tlist b{display:block;font-size:13px}
+details.more{margin-top:14px;border-top:1px solid var(--rule);padding-top:10px}
+details.more summary{cursor:pointer;font-size:14px;font-weight:700}
+details.more[open] summary{margin-bottom:8px}
+.choice{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.choice button{text-align:left;background:#fff;border:1.5px solid var(--paper-ink);border-radius:6px;padding:10px 12px;font-size:14px;color:var(--paper-ink);line-height:1.5}
+.choice button.right{background:#dff3e6;border-color:var(--ok)}
+.choice button.wrong{background:#f8e0de;border-color:var(--hanko)}
+/* 標識カード（標識の練習コース）：表示中は周辺地図の場所を使う */
+#signCard{left:12px;top:calc(142px + env(safe-area-inset-top,0px));width:min(330px,40vw);padding:7px 10px;pointer-events:none}
+body.sgcard #mini{visibility:hidden}
+#signCard .sch{font-size:11px;letter-spacing:.08em;color:var(--amber);font-weight:700;margin-bottom:3px}
+#signCard .scr{display:flex;gap:8px;align-items:center;padding:3px 0;border-top:1px solid var(--hud-line)}#signCard .scr:first-child{border-top:0}
+#signCard .scr canvas{flex:none;background:rgba(255,255,255,.08);border-radius:4px}
+#signCard .scr b{display:block;font-size:13px;line-height:1.3}#signCard .scr small{display:block;font-size:10.5px;color:var(--hud-dim)}
+#signCard .scr span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:11px;line-height:1.35;color:#d7e0dc;overflow:hidden}
+@media (max-height:520px){#signCard{top:calc(56px + env(safe-area-inset-top,0px));width:min(220px,30vw);padding:4px 7px}#signCard .scr span{display:none}#signCard .scr b{font-size:11.5px}#signCard .scr canvas{width:30px!important;height:30px!important}}
+@media (orientation:portrait) and (max-width:620px){#signCard{top:calc(330px + env(safe-area-inset-top,0px));left:12px;right:12px;width:auto}}
+/* 標識図鑑 */
+.card.wide{width:min(980px,100%)}
+.signBox{margin-top:6px}
+.sbq{width:100%;box-sizing:border-box;font:inherit;font-size:14px;padding:8px 10px;border:1.5px solid var(--rule);border-radius:6px;margin:0 0 10px;background:#fff;color:var(--paper-ink)}
+.sgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
+.scell{display:flex;flex-direction:column;align-items:center;gap:4px;background:#fff;border:1.5px solid var(--rule);border-radius:8px;padding:8px 4px;color:var(--paper-ink);font-size:11.5px;line-height:1.35;text-align:center;min-height:118px}
+.scell:hover{border-color:var(--paper-ink)}.scell em{display:block;font-style:normal;font-family:var(--f-num);font-size:12px;color:#55665d}
+.sgimg{display:block}.sdimgs{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin:4px 0 12px;padding:12px;background:#dfe5e1;border-radius:8px}
+#loadMsg{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:30;font-size:14px;color:var(--hud-dim)}
+#flash{position:fixed;inset:0;z-index:6;pointer-events:none;background:radial-gradient(ellipse at center,transparent 50%,rgba(212,42,42,.55));opacity:0;transition:opacity .2s}
+#eew{position:fixed;left:50%;top:22%;transform:translateX(-50%);z-index:8;background:#b0101b;color:#fff;padding:10px 18px;border-radius:8px;font-weight:700;font-size:18px;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.5);pointer-events:none}
+#eew small{display:block;font-size:13px;font-weight:400}
+#phone{position:fixed;left:50%;bottom:calc(120px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:8;width:min(300px,80vw);background:#f7f7f7;color:#111;border-radius:14px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.45);border:0;text-align:left;font-size:13px;line-height:1.45}
+#phone b{display:block;font-size:12px;color:#666}
+@media (orientation:portrait) and (min-width:621px){
+  #hudTL{width:min(250px,30vw)}
+  body.touch #coach{left:calc(min(250px,30vw) + 22px);right:160px;transform:none;max-width:none}
+}
+/* スマホ（body.phone：短い辺が600px未満のタッチ端末）だけ：教官のコメント・減点などの表示・速報を、
+   小さくして画面の上の1列にまとめる。PC・タブレットでは #msgs は箱を作らず、今までどおりの位置に出る */
+#msgs{display:contents}
+body.phone #msgs{display:flex;flex-direction:column;align-items:center;gap:3px;position:fixed;z-index:5;pointer-events:none;box-sizing:border-box}
+body.phone #hud #msgs>*{position:static;transform:none;left:auto;right:auto;top:auto;bottom:auto;margin:0;width:auto;max-width:100%;box-sizing:border-box}
+body.phone #msgs #coach{font-size:11px;line-height:1.32;padding:3px 8px;gap:6px;border-radius:8px}
+body.phone #msgs #coach .who{font-size:9.5px;padding:1px 4px;margin-top:1px;border-radius:4px}
+body.phone #msgs #coach.hide{display:none}
+body.phone #msgs #coachText{text-wrap:pretty}
+body.phone #msgs #toasts{display:flex;flex-direction:column;align-items:center;gap:3px}
+body.phone #msgs .toast{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px;max-width:100%;box-sizing:border-box;padding:1px 9px 2px;font-size:10.5px;line-height:1.3;border-left-width:4px;border-radius:8px}
+body.phone #msgs .toast b{order:1;font-size:11.5px}
+body.phone #msgs .toast .pt{order:2;float:none;margin:0;font-size:14px;line-height:1.1}
+body.phone #msgs .toast>span:last-child{order:3;flex-basis:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#cfd8d4}
+body.phone #msgs .toast>span:last-child:empty,body.phone #msgs .toast:not(.info)>span:last-child{display:none}
+body.phone #msgs .toast~.toast{display:none}
+body.phone #msgs #eew{padding:3px 10px;border-radius:8px;font-size:12px;line-height:1.35;box-shadow:0 3px 10px rgba(0,0,0,.45)}
+body.phone #msgs #eew small{display:inline;margin-left:6px;font-size:10.5px}
+body.phone #scoreBox{padding:3px 9px}
+body.phone #scoreBox .lbl{font-size:9.5px;line-height:1.2}
+body.phone #scoreVal,body.phone #timeVal{display:inline-block;vertical-align:baseline}
+body.phone #scoreVal{font-size:24px}
+body.phone #timeVal{font-size:12px;margin-left:6px}
+body.phone #hudTR{gap:6px}
+body.phone .ibtn{width:36px;height:36px}
+body.phone .ibtn svg{width:18px;height:18px}
+@media (orientation:portrait){
+  body.phone #stageChip{display:none}
+  body.phone #hudTL{width:calc(100vw - 154px)}
+  body.phone #nav{padding:6px 9px;gap:8px}
+  body.phone #navArrow{width:32px;height:32px}
+  body.phone #navDist{font-size:22px}
+  body.phone #navText{font-size:12px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
+  body.phone #msgs{top:calc(100px + env(safe-area-inset-top,0px));left:8px;right:8px}
+  body.phone #mirRear,body.phone #rearCam{top:calc(194px + env(safe-area-inset-top,0px))}
+}
+@media (orientation:landscape){
+  body.phone #hudTR{flex-direction:row;align-items:flex-start}
+  body.phone #mirRear{width:min(250px,30vw,calc(100vw - 468px))}
+  body.phone #msgs{top:calc(74px + env(safe-area-inset-top,0px));left:calc(min(210px,30vw) + 22px);right:12px}
+  /* 標識カード（左上）が出ている間は、その右から */
+  body.phone.sgcard #msgs{left:calc(min(220px,30vw) + 42px)}
+  /* 後退中（バックモニターが出ている間）は、モニターを左上（ナビと地図の位置）に移し、コメントをその右に出す */
+  body.phone.revcam #rearCam{left:12px;transform:none}
+  body.phone.revcam #hudTL{visibility:hidden}
+  body.phone.revcam #msgs{top:calc(60px + env(safe-area-inset-top,0px));left:calc(min(270px,36vw) + 28px);right:12px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<canvas id="gl" aria-label="運転画面"></canvas>
+<div id="flash"></div>
+<div id="loadMsg">町を準備しています…</div>
+
+<div class="mirror" id="mirRear" hidden></div>
+<div class="mirror" id="mirL" hidden></div>
+<div class="mirror" id="mirR" hidden></div>
+<div class="mirror" id="rearCam" hidden><canvas id="rearGuide" width="384" height="256"></canvas><span class="camLbl">後方を直接確認してください</span></div>
+
+<div id="hud" hidden>
+  <div class="hud" id="hudTL">
+    <div class="panel" id="stageChip">教習 <b id="stageName">—</b></div>
+    <div class="panel" id="nav">
+      <svg id="navArrow" viewBox="0 0 48 48" aria-hidden="true"><path id="navPath" d="M24 42V10M14 20l10-10 10 10" fill="none" stroke="#f1f4f2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div><div id="navDist">—</div><div id="navText">ルートを確認中</div></div>
+    </div>
+    <canvas class="panel" id="mini" width="340" height="340" aria-label="周辺地図"></canvas>
+  </div>
+  <div class="hud" id="hudTR">
+    <div class="panel" id="scoreBox"><div class="lbl">持ち点</div><div id="scoreVal">100</div><div id="timeVal">0:00</div></div>
+    <div class="iconRow">
+      <button class="ibtn" id="btnCam" title="視点切替 (V)" aria-label="視点切替"><svg viewBox="0 0 24 24"><path d="M3 7h4l2-2h6l2 2h4v12H3z M12 9a4 4 0 1 0 0 8a4 4 0 1 0 0-8" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+      <button class="ibtn" id="btnSound" title="サウンド" aria-label="サウンド切替"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z M16 8a5 5 0 0 1 0 8" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+      <button class="ibtn" id="btnPause" title="一時停止 (Esc)" aria-label="一時停止"><svg viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="3"/></svg></button>
+    </div>
+  </div>
+  <div id="msgs">
+    <div id="eew" hidden></div>
+    <div class="hud panel" id="coach"><span class="who">教官</span><span id="coachText">準備をしましょう。</span></div>
+    <div class="hud" id="toasts" aria-live="polite"></div>
+  </div>
+  <div class="hud panel" id="signCard" hidden aria-live="polite"><div class="sch">標識</div><div class="scl"></div></div>
+  <div class="hud panel" id="cluster">
+    <div id="lamps">
+      <span class="lamp blk" id="lmpL">◀ 左</span><span class="lamp haz" id="lmpH">▲ ハザード</span><span class="lamp blk" id="lmpR">右 ▶</span>
+      <span class="lamp warn" id="lmpBelt">ベルト</span><span class="lamp" id="lmpLight">ライト</span><span class="lamp warn" id="lmpPB">P ブレーキ</span>
+    </div>
+    <div id="speedWrap"><div id="speedVal">0</div><div id="speedUnit">km/h</div></div>
+    <div id="limitSign"><span id="limitVal">30</span><span id="limitTag">法定</span></div>
+    <div id="gearBox">P R N <b>D</b></div>
+  </div>
+  <div class="hud" id="ctrlBar"></div>
+  <div class="hud" id="touchL" hidden><canvas id="wheel" width="300" height="300" aria-label="ハンドル"></canvas></div>
+  <div class="hud" id="touchR" hidden>
+    <div class="pedal" id="pedBrake">ブレーキ</div>
+    <div class="pedal" id="pedAcc">アクセル</div>
+  </div>
+</div>
+<button id="phone" hidden></button>
+<div class="overlay" id="ov" hidden></div>
+<div id="guide" hidden></div>
