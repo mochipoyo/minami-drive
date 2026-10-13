@@ -34,6 +34,18 @@ export default async function ({ browser, url, rep }) {
     rep.ok(S, 'three.js を読み込めないとき、理由と再読み込みボタンを表示する', /読み込め/.test(t) && !!btn, t.slice(0, 90));
     await ctx.close();
   }
+  // 3b) フォントの CSS（Google Fonts）が応答しない・読み込めないとき → 待ちすぎずに起動する
+  //     （応答しないと、変更前はスクリプトの実行が止まり、起動しなかった）
+  for (const [name, handler, limit] of [['応答しない', () => {}, 15], ['読み込めない', (r) => r.abort(), 8]]) {
+    const { ctx, page, errors } = await openPage(browser, url, { goto: false });
+    await page.route('https://fonts.googleapis.com/**', handler);
+    const t0 = Date.now();
+    await page.goto(url, { waitUntil: 'commit' });
+    let ok = true; try { await waitMenu(page, 30000); } catch (e) { ok = false; }
+    const sec = (Date.now() - t0) / 1000;
+    rep.ok(S, `フォントのCSSが${name}ときも、${limit}秒以内に起動する`, ok && sec <= limit && errors.length === 0, `${sec.toFixed(1)}秒 ` + errors.slice(0, 1).join(''));
+    await ctx.close();
+  }
   // 4) WebGL が使えないとき → 分かりやすい理由と再読み込みボタン
   {
     const noGL = () => { const g = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (t, ...a) { return /webgl/i.test(t) ? null : g.call(this, t, ...a); }; };
