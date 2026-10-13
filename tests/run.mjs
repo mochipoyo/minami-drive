@@ -2,7 +2,7 @@
 //   SUITES=boot,storage のように一部だけ実行できる。結果は results/latest.json にも保存
 import { startServer, launch, Report } from './lib.mjs';
 
-const ALL = ['boot', 'storage', 'input', 'timing', 'scoring', 'lessons'];
+const ALL = ['boot', 'storage', 'input', 'timing', 'scoring', 'lessons', 'special'];
 const suites = (process.env.SUITES || ALL.join(',')).split(',').filter(Boolean);
 const srv = await startServer();
 const browser = await launch();
