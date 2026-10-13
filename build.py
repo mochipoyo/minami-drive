@@ -10,6 +10,8 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parent
 THREE_JS = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'
+# cdnjs から読み込めなかったときの予備（同じ r128）。どちらも読み込めないときは src/js/00_boot.js が理由を表示する
+THREE_JS_FALLBACK = 'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js'
 DESC = ('ブラウザで遊べる3Dの運転教習ゲーム。架空の町・都会・高速道路を走り、'
         '日本の交通ルールにそって採点されます。PCとスマートフォンに対応。')
 # タブのアイコン（初心者マークの形をSVGで描いたもの）
@@ -39,6 +41,7 @@ def main():
         + HEAD_META + '\n' + head_part + '\n</head>\n<body>\n'
         + body_part + '\n'
         + f'<script src="{THREE_JS}"></script>\n'
+        + f'<script>window.THREE||document.write(\'<script src="{THREE_JS_FALLBACK}"><\\/script>\')</script>\n'
         + '<script>\n(function(){\n' + js + '\n})();\n</script>\n'
         + '</body>\n</html>\n'
     )

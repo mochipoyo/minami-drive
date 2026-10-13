@@ -118,13 +118,14 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(0.05,Math.max
 function boot(data){
   if(data&&data.settings)Object.assign(SETTINGS,data.settings);if(data&&data.best)BEST=Object.assign({},data.best,BEST);
   if(window.claude&&window.claude.hot&&window.claude.hot.snapshot){try{window.claude.hot.snapshot(()=>({settings:SETTINGS,best:BEST}));}catch(e){}}
-  if(typeof THREE==='undefined'){$('loadMsg').textContent='3D表示の読み込みに失敗しました。ネットワーク接続を確認して再読み込みしてください。';return;}
+  if(typeof THREE==='undefined'){bootFail('three');return;}
+  if(!webglOK()){bootFail('webgl');return;}
   const coarse=matchMedia('(pointer:coarse)').matches;const small=Math.min(screen.width,screen.height)<900;const q=SETTINGS.quality!=='auto'?SETTINGS.quality:(coarse&&small?'low':coarse?'mid':'high');
   try{scene=new THREE.Scene();initGeo();makeMaterials();modelMats(null);signalMats();initRenderer(q);
     skyMesh=buildSky();buildRain();PERSIST.push(hemi,sun,sun.target,skyMesh,rainMesh,cockpit);
     makePlayer();PERSIST.push(PLAYER.model.grp,PLAYER.headL,PLAYER.headL.target);PLAYER.model.grp.visible=false;
     loadMap('town');setEnv('day');}
-  catch(e){$('loadMsg').textContent='初期化に失敗しました：'+e.message;console.error(e);return;}
+  catch(e){console.error(e);bootFail(/webgl/i.test(String(e&&e.message))?'webgl':'init',e&&e.message);return;}
   VOICE.on=SETTINGS.voice;buildControls();bindKeys();applyTouch();resizeView();window.addEventListener('resize',()=>{resizeView();applyMirrors();});
   $('btnPause').onclick=togglePause;$('btnCam').onclick=toggleView;$('btnSound').onclick=()=>{SETTINGS.sound=!SETTINGS.sound;SFX.init();SFX.setOn(SETTINGS.sound);store('mdk_settings',SETTINGS);toast('info',SETTINGS.sound?'サウンド オン':'サウンド オフ',0,'');};
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&STAGE.running&&!STAGE.paused&&!STAGE.over)togglePause();});

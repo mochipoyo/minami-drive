@@ -256,6 +256,18 @@ body.sgcard #mini{visibility:hidden}
 .scell:hover{border-color:var(--paper-ink)}.scell em{display:block;font-style:normal;font-family:var(--f-num);font-size:12px;color:#55665d}
 .sgimg{display:block}.sdimgs{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin:4px 0 12px;padding:12px;background:#dfe5e1;border-radius:8px}
 #loadMsg{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:30;font-size:14px;color:var(--hud-dim)}
+/* 起動できないときの説明（three.js・WebGL・初期化の失敗） */
+#loadMsg.bootErr{width:min(440px,calc(100vw - 32px));box-sizing:border-box;padding:18px 20px 16px;background:var(--paper);color:var(--paper-ink);border-radius:8px;box-shadow:0 18px 50px rgba(0,0,0,.5);font-size:14px;line-height:1.7;color-scheme:light}
+#loadMsg.bootErr b{display:block;font-size:17px;margin-bottom:6px}
+#loadMsg.bootErr p{margin:0 0 10px}
+#loadMsg.bootErr .small{font-size:12px;color:#55665d;word-break:break-all}
+#loadMsg.bootErr button{background:var(--paper-ink);color:var(--paper);border:0;border-radius:6px;padding:9px 16px;font-size:14px;font-weight:700}
+/* 画面上部のお知らせ（3D表示の中断・復帰、予期しないエラー） */
+#sysNotice{position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:35;width:min(520px,calc(100vw - 24px));box-sizing:border-box;display:flex;flex-direction:column;gap:6px;padding:10px 14px;background:#fff7e0;color:#2a1a00;border:2px solid var(--amber);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.45);font-size:13px;line-height:1.6;color-scheme:light}
+#sysNotice small{font-size:11px;color:#6b5a33;word-break:break-all}
+#sysNotice .row{display:flex;gap:8px;justify-content:flex-end}
+#sysNotice button{background:#2a1a00;color:#fff7e0;border:0;border-radius:6px;padding:6px 12px;font-size:13px;font-weight:700}
+#sysNotice button.ghost{background:transparent;color:#2a1a00;border:1.5px solid #2a1a00}
 #flash{position:fixed;inset:0;z-index:6;pointer-events:none;background:radial-gradient(ellipse at center,transparent 50%,rgba(212,42,42,.55));opacity:0;transition:opacity .2s}
 #eew{position:fixed;left:50%;top:22%;transform:translateX(-50%);z-index:8;background:#b0101b;color:#fff;padding:10px 18px;border-radius:8px;font-weight:700;font-size:18px;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.5);pointer-events:none}
 #eew small{display:block;font-size:13px;font-weight:400}
@@ -318,6 +330,7 @@ body.phone .ibtn svg{width:18px;height:18px}
 <canvas id="gl" aria-label="運転画面"></canvas>
 <div id="flash"></div>
 <div id="loadMsg">町を準備しています…</div>
+<div id="sysNotice" role="alert" hidden></div>
 
 <div class="mirror" id="mirRear" hidden></div>
 <div class="mirror" id="mirL" hidden></div>

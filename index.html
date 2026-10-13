@@ -268,6 +268,18 @@ body.sgcard #mini{visibility:hidden}
 .scell:hover{border-color:var(--paper-ink)}.scell em{display:block;font-style:normal;font-family:var(--f-num);font-size:12px;color:#55665d}
 .sgimg{display:block}.sdimgs{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin:4px 0 12px;padding:12px;background:#dfe5e1;border-radius:8px}
 #loadMsg{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:30;font-size:14px;color:var(--hud-dim)}
+/* 起動できないときの説明（three.js・WebGL・初期化の失敗） */
+#loadMsg.bootErr{width:min(440px,calc(100vw - 32px));box-sizing:border-box;padding:18px 20px 16px;background:var(--paper);color:var(--paper-ink);border-radius:8px;box-shadow:0 18px 50px rgba(0,0,0,.5);font-size:14px;line-height:1.7;color-scheme:light}
+#loadMsg.bootErr b{display:block;font-size:17px;margin-bottom:6px}
+#loadMsg.bootErr p{margin:0 0 10px}
+#loadMsg.bootErr .small{font-size:12px;color:#55665d;word-break:break-all}
+#loadMsg.bootErr button{background:var(--paper-ink);color:var(--paper);border:0;border-radius:6px;padding:9px 16px;font-size:14px;font-weight:700}
+/* 画面上部のお知らせ（3D表示の中断・復帰、予期しないエラー） */
+#sysNotice{position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:35;width:min(520px,calc(100vw - 24px));box-sizing:border-box;display:flex;flex-direction:column;gap:6px;padding:10px 14px;background:#fff7e0;color:#2a1a00;border:2px solid var(--amber);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.45);font-size:13px;line-height:1.6;color-scheme:light}
+#sysNotice small{font-size:11px;color:#6b5a33;word-break:break-all}
+#sysNotice .row{display:flex;gap:8px;justify-content:flex-end}
+#sysNotice button{background:#2a1a00;color:#fff7e0;border:0;border-radius:6px;padding:6px 12px;font-size:13px;font-weight:700}
+#sysNotice button.ghost{background:transparent;color:#2a1a00;border:1.5px solid #2a1a00}
 #flash{position:fixed;inset:0;z-index:6;pointer-events:none;background:radial-gradient(ellipse at center,transparent 50%,rgba(212,42,42,.55));opacity:0;transition:opacity .2s}
 #eew{position:fixed;left:50%;top:22%;transform:translateX(-50%);z-index:8;background:#b0101b;color:#fff;padding:10px 18px;border-radius:8px;font-weight:700;font-size:18px;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.5);pointer-events:none}
 #eew small{display:block;font-size:13px;font-weight:400}
@@ -331,6 +343,7 @@ body.phone .ibtn svg{width:18px;height:18px}
 <canvas id="gl" aria-label="運転画面"></canvas>
 <div id="flash"></div>
 <div id="loadMsg">町を準備しています…</div>
+<div id="sysNotice" role="alert" hidden></div>
 
 <div class="mirror" id="mirRear" hidden></div>
 <div class="mirror" id="mirL" hidden></div>
@@ -380,8 +393,43 @@ body.phone .ibtn svg{width:18px;height:18px}
 <div class="overlay" id="ov" hidden></div>
 <div id="guide" hidden></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>window.THREE||document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>')</script>
 <script>
 (function(){
+// ===== 00_boot.js : 起動の確認と、起動・実行中の問題の表示 =====
+// three.js を読み込めない・WebGL が使えないときは「読み込み中」のまま止めず、理由と再読み込みボタンを出す。
+// 実行中の予期しないエラーや、3D表示の中断（WebGLコンテキストの喪失）も画面で知らせる。
+const BOOT_MSG={
+  three:['3D表示の部品を読み込めませんでした','3D表示に使うプログラム（three.js）を、インターネットから読み込めませんでした。接続を確かめてから、再読み込みしてください。'],
+  webgl:['このブラウザでは3D表示が使えません','3D表示（WebGL）が使えないか、無効になっています。Chrome・Safari・Edge などのブラウザの新しい版で開くか、ブラウザの設定でハードウェアアクセラレーション（グラフィックの高速化）を有効にしてから、再読み込みしてください。'],
+  init:['起動中にエラーが起きました','再読み込みしてください。何度も起きるときは、別のブラウザでもお試しください。']};
+function bootFail(kind,detail){const el=document.getElementById('loadMsg');if(!el)return;const[t,x]=BOOT_MSG[kind]||BOOT_MSG.init;
+  el.hidden=false;el.className='bootErr';el.setAttribute('role','alert');el.textContent='';
+  const h=document.createElement('b');h.textContent=t;const p=document.createElement('p');p.textContent=x;el.append(h,p);
+  if(detail){const d=document.createElement('p');d.className='small';d.textContent='詳細：'+String(detail).slice(0,160);el.append(d);}
+  const b=document.createElement('button');b.type='button';b.textContent='再読み込み';b.onclick=()=>location.reload();el.append(b);}
+// WebGL が使えるか（確かめた描画領域はすぐ手放す）
+function webglOK(){try{if(!window.WebGLRenderingContext)return false;const c=document.createElement('canvas');const gl=c.getContext('webgl2')||c.getContext('webgl')||c.getContext('experimental-webgl');if(!gl)return false;
+  const x=gl.getExtension('WEBGL_lose_context');if(x)x.loseContext();return true;}catch(e){return false;}}
+// 画面上部のお知らせ（3D表示の中断・復帰、予期しないエラー）
+let SYS_T=null;
+function sysNotice(kind,detail){const n=document.getElementById('sysNotice');if(!n)return;clearTimeout(SYS_T);
+  const M={lost:'3D表示が一時的に中断されました。運転を一時停止しています。自動で戻るのを待っています。戻らないときは再読み込みしてください。',
+    restored:'3D表示が戻りました。一時停止メニューの［再開］で続きから運転できます。',
+    error:'予期しないエラーが起きました。画面や操作がおかしいときは、再読み込みしてください。'};
+  if(!kind){n.hidden=true;return;}
+  n.textContent='';const p=document.createElement('span');p.textContent=M[kind]||M.error;n.append(p);
+  if(detail){const d=document.createElement('small');d.textContent='詳細：'+String(detail).slice(0,120);n.append(d);}
+  const row=document.createElement('span');row.className='row';
+  if(kind!=='restored'){const r=document.createElement('button');r.type='button';r.textContent='再読み込み';r.onclick=()=>location.reload();row.append(r);}
+  const c=document.createElement('button');c.type='button';c.className='ghost';c.textContent='閉じる';c.onclick=()=>{n.hidden=true;};row.append(c);n.append(row);
+  n.dataset.kind=kind;n.hidden=false;if(kind==='restored')SYS_T=setTimeout(()=>{if(n.dataset.kind==='restored')n.hidden=true;},6000);}
+// 実行中の予期しないエラー：このページと three.js のエラーだけを対象にし、1回だけ知らせる（拡張機能などのエラーは除く）
+let SYS_ERR=false;
+window.addEventListener('error',(e)=>{if(SYS_ERR||!e)return;const f=String(e.filename||'');const here=location.href.split('#')[0];
+  if(!(f.split('#')[0]===here||/three(\.min)?\.js/.test(f)))return;SYS_ERR=true;try{sysNotice('error',e.message);}catch(x){}});
+if(typeof THREE==='undefined'){bootFail('three');return;}
+
 // ===== 00_text.js : 違反・解説データ（2026年10月時点で確認した法令・公的情報に基づく） =====
 'use strict';
 const RULES = {
@@ -5311,13 +5359,14 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(0.05,Math.max
 function boot(data){
   if(data&&data.settings)Object.assign(SETTINGS,data.settings);if(data&&data.best)BEST=Object.assign({},data.best,BEST);
   if(window.claude&&window.claude.hot&&window.claude.hot.snapshot){try{window.claude.hot.snapshot(()=>({settings:SETTINGS,best:BEST}));}catch(e){}}
-  if(typeof THREE==='undefined'){$('loadMsg').textContent='3D表示の読み込みに失敗しました。ネットワーク接続を確認して再読み込みしてください。';return;}
+  if(typeof THREE==='undefined'){bootFail('three');return;}
+  if(!webglOK()){bootFail('webgl');return;}
   const coarse=matchMedia('(pointer:coarse)').matches;const small=Math.min(screen.width,screen.height)<900;const q=SETTINGS.quality!=='auto'?SETTINGS.quality:(coarse&&small?'low':coarse?'mid':'high');
   try{scene=new THREE.Scene();initGeo();makeMaterials();modelMats(null);signalMats();initRenderer(q);
     skyMesh=buildSky();buildRain();PERSIST.push(hemi,sun,sun.target,skyMesh,rainMesh,cockpit);
     makePlayer();PERSIST.push(PLAYER.model.grp,PLAYER.headL,PLAYER.headL.target);PLAYER.model.grp.visible=false;
     loadMap('town');setEnv('day');}
-  catch(e){$('loadMsg').textContent='初期化に失敗しました：'+e.message;console.error(e);return;}
+  catch(e){console.error(e);bootFail(/webgl/i.test(String(e&&e.message))?'webgl':'init',e&&e.message);return;}
   VOICE.on=SETTINGS.voice;buildControls();bindKeys();applyTouch();resizeView();window.addEventListener('resize',()=>{resizeView();applyMirrors();});
   $('btnPause').onclick=togglePause;$('btnCam').onclick=toggleView;$('btnSound').onclick=()=>{SETTINGS.sound=!SETTINGS.sound;SFX.init();SFX.setOn(SETTINGS.sound);store('mdk_settings',SETTINGS);toast('info',SETTINGS.sound?'サウンド オン':'サウンド オフ',0,'');};
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&STAGE.running&&!STAGE.paused&&!STAGE.over)togglePause();});
