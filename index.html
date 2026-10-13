@@ -13,7 +13,9 @@
 <title>みなみ町ドライブ教習</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Dela+Gothic+One&family=Saira+Condensed:wght@500;700&display=swap">
+<!-- フォントのCSSは、読み込みが止まってもゲームの起動を止めないよう media="print" で読み込み、読み込めたら画面にも使う（起動の待ち方は 13_main.js） -->
+<link rel="stylesheet" id="fontCss" media="print" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Dela+Gothic+One&family=Saira+Condensed:wght@500;700&display=swap">
+<script>(function(l){if(!l)return;l.addEventListener('load',function(){l.media='all';l.setAttribute('data-st','ok');});l.addEventListener('error',function(){l.setAttribute('data-st','err');});})(document.getElementById('fontCss'));</script>
 <style>
 /* Layout: full-bleed 3D road view; HUD clusters sit at the screen edges like an instrument panel; menus are a driving-school record card (教習原簿) with hanko stamps. */
 :root{
@@ -268,6 +270,18 @@ body.sgcard #mini{visibility:hidden}
 .scell:hover{border-color:var(--paper-ink)}.scell em{display:block;font-style:normal;font-family:var(--f-num);font-size:12px;color:#55665d}
 .sgimg{display:block}.sdimgs{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin:4px 0 12px;padding:12px;background:#dfe5e1;border-radius:8px}
 #loadMsg{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:30;font-size:14px;color:var(--hud-dim)}
+/* 起動できないときの説明（three.js・WebGL・初期化の失敗） */
+#loadMsg.bootErr{width:min(440px,calc(100vw - 32px));box-sizing:border-box;padding:18px 20px 16px;background:var(--paper);color:var(--paper-ink);border-radius:8px;box-shadow:0 18px 50px rgba(0,0,0,.5);font-size:14px;line-height:1.7;color-scheme:light}
+#loadMsg.bootErr b{display:block;font-size:17px;margin-bottom:6px}
+#loadMsg.bootErr p{margin:0 0 10px}
+#loadMsg.bootErr .small{font-size:12px;color:#55665d;word-break:break-all}
+#loadMsg.bootErr button{background:var(--paper-ink);color:var(--paper);border:0;border-radius:6px;padding:9px 16px;font-size:14px;font-weight:700}
+/* 画面上部のお知らせ（3D表示の中断・復帰、予期しないエラー） */
+#sysNotice{position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:35;width:min(520px,calc(100vw - 24px));box-sizing:border-box;display:flex;flex-direction:column;gap:6px;padding:10px 14px;background:#fff7e0;color:#2a1a00;border:2px solid var(--amber);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.45);font-size:13px;line-height:1.6;color-scheme:light}
+#sysNotice small{font-size:11px;color:#6b5a33;word-break:break-all}
+#sysNotice .row{display:flex;gap:8px;justify-content:flex-end}
+#sysNotice button{background:#2a1a00;color:#fff7e0;border:0;border-radius:6px;padding:6px 12px;font-size:13px;font-weight:700}
+#sysNotice button.ghost{background:transparent;color:#2a1a00;border:1.5px solid #2a1a00}
 #flash{position:fixed;inset:0;z-index:6;pointer-events:none;background:radial-gradient(ellipse at center,transparent 50%,rgba(212,42,42,.55));opacity:0;transition:opacity .2s}
 #eew{position:fixed;left:50%;top:22%;transform:translateX(-50%);z-index:8;background:#b0101b;color:#fff;padding:10px 18px;border-radius:8px;font-weight:700;font-size:18px;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,.5);pointer-events:none}
 #eew small{display:block;font-size:13px;font-weight:400}
@@ -331,6 +345,7 @@ body.phone .ibtn svg{width:18px;height:18px}
 <canvas id="gl" aria-label="運転画面"></canvas>
 <div id="flash"></div>
 <div id="loadMsg">町を準備しています…</div>
+<div id="sysNotice" role="alert" hidden></div>
 
 <div class="mirror" id="mirRear" hidden></div>
 <div class="mirror" id="mirL" hidden></div>
@@ -380,8 +395,43 @@ body.phone .ibtn svg{width:18px;height:18px}
 <div class="overlay" id="ov" hidden></div>
 <div id="guide" hidden></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>window.THREE||document.write('<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"><\/script>')</script>
 <script>
 (function(){
+// ===== 00_boot.js : 起動の確認と、起動・実行中の問題の表示 =====
+// three.js を読み込めない・WebGL が使えないときは「読み込み中」のまま止めず、理由と再読み込みボタンを出す。
+// 実行中の予期しないエラーや、3D表示の中断（WebGLコンテキストの喪失）も画面で知らせる。
+const BOOT_MSG={
+  three:['3D表示の部品を読み込めませんでした','3D表示に使うプログラム（three.js）を、インターネットから読み込めませんでした。接続を確かめてから、再読み込みしてください。'],
+  webgl:['このブラウザでは3D表示が使えません','3D表示（WebGL）が使えないか、無効になっています。Chrome・Safari・Edge などのブラウザの新しい版で開くか、ブラウザの設定でハードウェアアクセラレーション（グラフィックの高速化）を有効にしてから、再読み込みしてください。'],
+  init:['起動中にエラーが起きました','再読み込みしてください。何度も起きるときは、別のブラウザでもお試しください。']};
+function bootFail(kind,detail){const el=document.getElementById('loadMsg');if(!el)return;const[t,x]=BOOT_MSG[kind]||BOOT_MSG.init;
+  el.hidden=false;el.className='bootErr';el.setAttribute('role','alert');el.textContent='';
+  const h=document.createElement('b');h.textContent=t;const p=document.createElement('p');p.textContent=x;el.append(h,p);
+  if(detail){const d=document.createElement('p');d.className='small';d.textContent='詳細：'+String(detail).slice(0,160);el.append(d);}
+  const b=document.createElement('button');b.type='button';b.textContent='再読み込み';b.onclick=()=>location.reload();el.append(b);}
+// WebGL が使えるか（確かめた描画領域はすぐ手放す）
+function webglOK(){try{if(!window.WebGLRenderingContext)return false;const c=document.createElement('canvas');const gl=c.getContext('webgl2')||c.getContext('webgl')||c.getContext('experimental-webgl');if(!gl)return false;
+  const x=gl.getExtension('WEBGL_lose_context');if(x)x.loseContext();return true;}catch(e){return false;}}
+// 画面上部のお知らせ（3D表示の中断・復帰、予期しないエラー）
+let SYS_T=null;
+function sysNotice(kind,detail){const n=document.getElementById('sysNotice');if(!n)return;clearTimeout(SYS_T);
+  const M={lost:'3D表示が一時的に中断されました。運転を一時停止しています。自動で戻るのを待っています。戻らないときは再読み込みしてください。',
+    restored:'3D表示が戻りました。一時停止メニューの［再開］で続きから運転できます。',
+    error:'予期しないエラーが起きました。画面や操作がおかしいときは、再読み込みしてください。'};
+  if(!kind){n.hidden=true;return;}
+  n.textContent='';const p=document.createElement('span');p.textContent=M[kind]||M.error;n.append(p);
+  if(detail){const d=document.createElement('small');d.textContent='詳細：'+String(detail).slice(0,120);n.append(d);}
+  const row=document.createElement('span');row.className='row';
+  if(kind!=='restored'){const r=document.createElement('button');r.type='button';r.textContent='再読み込み';r.onclick=()=>location.reload();row.append(r);}
+  const c=document.createElement('button');c.type='button';c.className='ghost';c.textContent='閉じる';c.onclick=()=>{n.hidden=true;};row.append(c);n.append(row);
+  n.dataset.kind=kind;n.hidden=false;if(kind==='restored')SYS_T=setTimeout(()=>{if(n.dataset.kind==='restored')n.hidden=true;},6000);}
+// 実行中の予期しないエラー：このページと three.js のエラーだけを対象にし、1回だけ知らせる（拡張機能などのエラーは除く）
+let SYS_ERR=false;
+window.addEventListener('error',(e)=>{if(SYS_ERR||!e)return;const f=String(e.filename||'');const here=location.href.split('#')[0];
+  if(!(f.split('#')[0]===here||/three(\.min)?\.js/.test(f)))return;SYS_ERR=true;try{sysNotice('error',e.message);}catch(x){}});
+if(typeof THREE==='undefined'){bootFail('three');return;}
+
 // ===== 00_text.js : 違反・解説データ（2026年10月時点で確認した法令・公的情報に基づく） =====
 'use strict';
 const RULES = {
@@ -4084,16 +4134,17 @@ function buildControls(){const bar=$('ctrlBar');bar.innerHTML='';for(const[id,la
     if(id==='hn'||id==='lkL'||id==='lkR'){const dn=(e)=>{e.preventDefault();act(id,true);},up=(e)=>{e.preventDefault();act(id,false);};b.addEventListener('pointerdown',dn);b.addEventListener('pointerup',up);b.addEventListener('pointerleave',up);b.addEventListener('pointercancel',up);b.addEventListener('contextmenu',(e)=>e.preventDefault());}
     else b.addEventListener('click',(e)=>{e.preventDefault();act(id,true);b.blur();});}
   // ペダル・ハンドル（タッチ）
-  const ped=(el,key)=>{const on=(e)=>{e.preventDefault();INPUT[key]=true;el.classList.add('down');el.setPointerCapture&&el.setPointerCapture(e.pointerId);},off=(e)=>{INPUT[key]=false;el.classList.remove('down');};
+  const ped=(el,key)=>{const on=(e)=>{e.preventDefault();INPUT[key]=true;el.classList.add('down');try{el.setPointerCapture&&el.setPointerCapture(e.pointerId);}catch(x){}},off=(e)=>{INPUT[key]=false;el.classList.remove('down');};
     el.addEventListener('pointerdown',on);el.addEventListener('pointerup',off);el.addEventListener('pointercancel',off);};
   ped($('pedAcc'),'touchAcc');ped($('pedBrake'),'touchBrk');
   const wc=$('wheel');let dragging=false,startA=0,base=0;const ang=(e)=>{const r=wc.getBoundingClientRect();return Math.atan2(e.clientX-(r.left+r.width/2),-(e.clientY-(r.top+r.height/2)));};
-  wc.addEventListener('pointerdown',(e)=>{e.preventDefault();dragging=true;startA=ang(e);base=WHEEL.a;wc.setPointerCapture(e.pointerId);});
+  wc.addEventListener('pointerdown',(e)=>{e.preventDefault();dragging=true;startA=ang(e);base=WHEEL.a;try{wc.setPointerCapture(e.pointerId);}catch(x){}});
   wc.addEventListener('pointermove',(e)=>{if(!dragging)return;let d=wrapA(ang(e)-startA);WHEEL.a=clamp(base+d,-Math.PI*0.95,Math.PI*0.95);startA=ang(e);base=WHEEL.a;});
   const end=()=>{dragging=false;};wc.addEventListener('pointerup',end);wc.addEventListener('pointercancel',end);WHEEL.drag=()=>dragging;
   // 視線（ドラッグで見回す）
   const gl=$('gl');let lx=null;gl.addEventListener('pointerdown',(e)=>{if(e.pointerType==='mouse'&&e.button===0)lx=e.clientX;});window.addEventListener('pointermove',(e)=>{if(lx!==null)INPUT.dragLook=clamp((e.clientX-lx)/window.innerWidth*3,-1.6,1.6);});
-  window.addEventListener('pointerup',()=>{lx=null;INPUT.dragLook=0;});}
+  window.addEventListener('pointerup',()=>{lx=null;INPUT.dragLook=0;});
+  WHEEL.release=()=>{dragging=false;lx=null;INPUT.dragLook=0;};}
 const WHEEL={a:0,drag:()=>false};
 function drawWheel(){const c=$('wheel');if(c.offsetParent===null)return;const x=c.getContext('2d');const W=c.width;x.clearRect(0,0,W,W);x.save();x.translate(W/2,W/2);x.rotate(WHEEL.a);
   x.lineWidth=26;x.strokeStyle='rgba(20,24,28,.85)';x.beginPath();x.arc(0,0,W/2-20,0,7);x.stroke();x.lineWidth=4;x.strokeStyle='rgba(255,255,255,.35)';x.beginPath();x.arc(0,0,W/2-20,0,7);x.stroke();
@@ -4109,7 +4160,12 @@ const KEYMAP={KeyB:'belt',KeyR:'gear',KeyP:'pb',KeyQ:'bl',KeyE:'br',KeyF:'hz',Ke
 function bindKeys(){window.addEventListener('keydown',(e)=>{if(e.target&&(e.target.tagName==='INPUT'))return;const k=e.code;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(k))e.preventDefault();
     if(KEY[k]&&!['KeyH','KeyZ','KeyC'].includes(k))return;KEY[k]=true;if(KEYMAP[k])act(KEYMAP[k],true);if(k==='KeyV')toggleView();if(k==='Escape')togglePause();});
   window.addEventListener('keyup',(e)=>{KEY[e.code]=false;if(['KeyH','KeyZ','KeyC'].includes(e.code))act(KEYMAP[e.code],false);});
-  window.addEventListener('blur',()=>{for(const k in KEY)KEY[k]=false;INPUT.lookL=INPUT.lookR=false;});}
+  window.addEventListener('blur',releaseInputs);window.addEventListener('pagehide',releaseInputs);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)releaseInputs();});}
+// 押しっぱなしの防止：フォーカスを失う・画面が隠れるとキーやタッチの離した合図が届かないことがあるので、すべて離した状態にする
+function releaseInputs(){for(const k in KEY)KEY[k]=false;INPUT.lookL=INPUT.lookR=false;INPUT.touchAcc=INPUT.touchBrk=false;INPUT.dragLook=0;
+  for(const id of['pedAcc','pedBrake']){const el=$(id);if(el)el.classList.remove('down');}if(WHEEL.release)WHEEL.release();
+  const p=PLAYER;if(p&&p.horn){p.horn=false;SFX.horn&&SFX.horn(false);}}
 function toggleView(){const order=['cockpit','chase','top'];viewMode=order[(order.indexOf(viewMode)+1)%order.length];if(viewMode==='chase'&&PLAYER){const f=fwd(PLAYER.h);camera.position.set(PLAYER.x-f.x*7.5,(PLAYER.y||0)+3.1,PLAYER.z-f.z*7.5);}applyMirrors();toast('info',{cockpit:'運転席の視点',chase:'後ろからの視点',top:'上からの視点'}[viewMode],0,'');}
 let hudT=0;
 function updateHud(dt){const p=PLAYER;if(!p)return;if(!STAGE.paused)coachT-=dt;if(coachT<=0)$('coach').classList.add('hide');
@@ -4165,8 +4221,17 @@ function applyMirrors(){const show=SETTINGS.mirrors&&viewMode==='cockpit'&&STAGE
 
 
 // ===== 11b_menus.js : 教習原簿（メニュー）・結果・設定 =====
-const SETTINGS=Object.assign({sound:true,voice:true,mirrors:true,shadow:true,touch:'auto',sideOnPhone:false,quality:'auto',rearCam:true},store('mdk_settings')||{});
-let BEST=store('mdk_best')||{};
+// 保存データは形と値を確かめてから使う（壊れた値・型の違う値で表示が崩れたり、タッチ操作が消えたりしないように）。正しい値はそのまま使う
+const SETTINGS_DEF={sound:true,voice:true,mirrors:true,shadow:true,touch:'auto',sideOnPhone:false,quality:'auto',rearCam:true};
+function cleanSettings(v){const o=Object.assign({},SETTINGS_DEF);if(!v||typeof v!=='object'||Array.isArray(v))return o;
+  for(const k in v){const d=SETTINGS_DEF[k],x=v[k];if(d===undefined){o[k]=x;continue;}
+    if(k==='touch'?['auto','on','off'].includes(x):k==='quality'?['auto','high','mid','low'].includes(x):typeof x===typeof d)o[k]=x;}return o;}
+function cleanBest(v){const o={};if(!v||typeof v!=='object'||Array.isArray(v))return o;
+  for(const k in v){const e=v[k];if(e&&typeof e==='object'&&typeof e.score==='number'&&isFinite(e.score))o[k]=Object.assign({},e,{score:Math.max(0,Math.min(100,e.score)),pass:!!e.pass});}return o;}
+const SETTINGS=cleanSettings(store('mdk_settings'));
+let BEST=cleanBest(store('mdk_best'));
+// 保存できるか（プライベートブラウズなどで保存できない環境では、メニューで知らせる）
+const STORE_OK=(()=>{try{localStorage.setItem('mdk_probe','1');localStorage.removeItem('mdk_probe');return true;}catch(e){return false;}})();
 function ov(html){const o=$('ov');o.innerHTML=html;o.hidden=false;o.scrollTop=0;const b=o.querySelector('button.go');if(b)setTimeout(()=>b.focus({preventScroll:true}),30);return o;}
 function closeOv(){$('ov').hidden=true;$('ov').innerHTML='';}
 const esc=(s)=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -4184,7 +4249,7 @@ function showMenu(cat){STAGE.running=false;STAGE.menu=true;$('hud').hidden=true;
     <div class="tabs" role="tablist" aria-label="教習の種類">${cats.map(c=>`<button role="tab" class="tab" data-k="${c.k}" aria-selected="${c.k===cat}"><b>${esc(c.t)}</b><small>${esc(c.sub)}</small></button>`).join('')}</div>
     ${rows?`<table class="genbo"><thead><tr><th>No.</th><th>教習項目</th><th style="text-align:right">最高点</th><th>判定</th></tr></thead><tbody>${rows}</tbody></table>`:''}${extra}
     <div class="btnRow"><button class="ghost" id="bHelp">操作方法</button><button class="ghost" id="bSet">設定</button><button class="ghost" id="bAbout">このゲームについて・出典</button></div>
-    <p class="small">採点はゲーム独自の基準（100点からの減点、70点以上かつ重大違反なしで合格）です。実際の技能検定の採点基準とは異なります。</p></div></div>`);
+    <p class="small">採点はゲーム独自の基準（100点からの減点、70点以上かつ重大違反なしで合格）です。実際の技能検定の採点基準とは異なります。</p>${STORE_OK?'':'<p class="small">このブラウザでは記録や設定を保存できない状態のため、再読み込みしたりページを閉じたりすると消えます（サイトデータの保存をブロックしている場合など）。</p>'}</div></div>`);
   document.querySelectorAll('.tabs .tab').forEach(b=>b.onclick=()=>{store('mdk_tab',b.dataset.k);showMenu(b.dataset.k);const t=document.querySelector(`.tabs .tab[data-k="${b.dataset.k}"]`);t&&t.focus({preventScroll:true});});
   document.querySelectorAll('tr.row').forEach(tr=>{const go=()=>showIntro(+tr.dataset.i);tr.onclick=go;tr.onkeydown=(e)=>{if(e.key==='Enter')go();};});
   if(cat==='sign'&&typeof bindSignMenu==='function')bindSignMenu();
@@ -4198,7 +4263,7 @@ function showIntro(i){const s=STAGES[i];if(s.cat)store('mdk_tab',s.cat);ov(`<div
   $('bGo').onclick=()=>{SFX.init();try{SFX.ctx&&SFX.ctx.resume&&SFX.ctx.resume();}catch(e){}SFX.setOn(SETTINGS.sound);closeOv();startStage(i);};$('bBack').onclick=showMenu;$('bHelp2').onclick=()=>showHelp(()=>showIntro(i));}
 // 自由走行：時間帯・天気を選ぶ
 const ENVOPTS=[['day','昼・晴れ'],['evening','夕方'],['night','夜'],['rain','雨'],['fog','霧']];
-function envChips(s){const cur=store('mdk_env_'+s.id)||s.env||'day';s.env=cur;s.envLabel=(ENVOPTS.find(e=>e[0]===cur)||ENVOPTS[0])[1];
+function envChips(s){let cur=store('mdk_env_'+s.id);if(!ENVOPTS.some(e=>e[0]===cur))cur=s.env||'day';s.env=cur;s.envLabel=(ENVOPTS.find(e=>e[0]===cur)||ENVOPTS[0])[1];
   return`<div class="envPick" role="radiogroup" aria-label="時間帯と天気">${ENVOPTS.map(([k,t])=>`<button class="tab envc" role="radio" data-env="${k}" aria-checked="${k===cur}" aria-selected="${k===cur}"><b>${t}</b></button>`).join('')}</div>`;}
 function bindEnvChips(s){document.querySelectorAll('.envc').forEach(b=>b.onclick=()=>{s.env=b.dataset.env;s.envLabel=(ENVOPTS.find(e=>e[0]===s.env)||ENVOPTS[0])[1];store('mdk_env_'+s.id,s.env);
   document.querySelectorAll('.envc').forEach(x=>{const on=x===b;x.setAttribute('aria-checked',on);x.setAttribute('aria-selected',on);});const pl=document.querySelector('.card header .plate');if(pl)pl.textContent=s.envLabel;});}
@@ -4316,7 +4381,9 @@ function choiceAnswerOK(){const st=CHOICE.cur;if(!st)return false;const k=st.opt
 const SIGN_SRC='名称・番号・意味は「道路標識、区画線及び道路標示に関する命令」（標識令）別表第一（2026年9月1日施行の版、e-Gov法令検索）によります。絵は見分けやすさを優先して簡略化したイメージで、実際の様式（別表第二）とは形・文字・比率などが異なります。地名・番号は架空です。';
 const SIGN_ORDER=['reg','warn','inst','guide','aux'];
 function signThumb(id,px){const c=signCanvas(id,px*2);c.style.width=px+'px';c.style.height=px+'px';c.className='sgimg';return c;}
-function signMenuExtra(){const best=store('mdk_sign_quiz')||null;
+// クイズの最高記録（形と値を確かめて読む）
+function quizBest(){const b=store('mdk_sign_quiz');return b&&typeof b==='object'&&typeof b.best==='number'&&isFinite(b.best)?{best:Math.max(0,Math.min(10,Math.round(b.best)))}:null;}
+function signMenuExtra(){const best=quizBest();
   return`<div class="signBox"><p class="lede">道路標識は5種類（規制・警戒・指示・案内・補助）。標識令の別表第一にある <b>${SIGNDATA.length}種類</b>（様式の違いを含めると${SIGNDATA.reduce((a,e)=>a+e.v.length,0)}）をすべて収録しています。上の教習では「標識の練習コース」を走って、実際の場面で確かめられます。</p>
     <div class="btnRow"><button class="go" id="bBook">標識図鑑をひらく</button><button class="ghost" id="bQuiz">標識クイズ（10問）</button>${best?`<span class="small" style="align-self:center">クイズの最高 ${best.best}/10</span>`:''}</div>
     <p class="small">${esc(SIGN_SRC)}</p></div>`;}
@@ -4359,7 +4426,7 @@ function signQuiz(){const pool=SIGNDATA.filter(e=>e.c!=='guide'||Math.random()<0
       $('sqFb').innerHTML=`<p class="${right?'okt':'ngt'}">${right?'◎ 正解':'× 正解は「'+esc(Q.e.n)+'」'}（${esc(Q.e.no)}）</p><p>${esc(Q.e.m)}</p><div class="btnRow"><button class="go" id="sqNext">${i<qs.length-1?'次へ':'結果を見る'}</button></div>`;
       $('sqNext').onclick=()=>{i++;if(i<qs.length)show();else done();};$('sqNext').focus({preventScroll:true});});
     $('sqQuit').onclick=()=>showMenu('sign');};
-  const done=()=>{const b=store('mdk_sign_quiz')||{best:0};if(ok>b.best){b.best=ok;store('mdk_sign_quiz',b);}
+  const done=()=>{const b=quizBest()||{best:0};if(ok>b.best){b.best=ok;store('mdk_sign_quiz',b);}
     ov(`<div class="card"><header><div><div class="eyebrow">標識クイズ</div><h2>結果</h2></div></header><div class="body"><div class="resTop"><div class="resScore">${ok}<small> / ${qs.length}</small></div></div>
       <p class="lede" style="margin-top:10px">${ok>=9?'すばらしい！ほとんどの標識を見分けられました。':ok>=6?'よくできました。まちがえた標識は図鑑で確かめましょう。':'図鑑で、形と色の決まり（赤い丸は禁止、青は指示、黄色のひし形は注意）から覚えていきましょう。'}</p>
       <div class="btnRow"><button class="go" id="sqAgain">もう一度</button><button class="ghost" id="sqBook">図鑑をひらく</button><button class="ghost" id="sqMenu">原簿にもどる</button></div></div></div>`);
@@ -5309,15 +5376,19 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(0.05,Math.max
   renderPeds(dt);adaptRes(dt);cullTick();
   renderAll(STAGE.running&&viewMode==='cockpit'&&SETTINGS.mirrors);}
 function boot(data){
-  if(data&&data.settings)Object.assign(SETTINGS,data.settings);if(data&&data.best)BEST=Object.assign({},data.best,BEST);
+  if(data&&data.settings)Object.assign(SETTINGS,cleanSettings(Object.assign({},SETTINGS,data.settings)));if(data&&data.best)BEST=Object.assign({},cleanBest(data.best),BEST);
   if(window.claude&&window.claude.hot&&window.claude.hot.snapshot){try{window.claude.hot.snapshot(()=>({settings:SETTINGS,best:BEST}));}catch(e){}}
-  if(typeof THREE==='undefined'){$('loadMsg').textContent='3D表示の読み込みに失敗しました。ネットワーク接続を確認して再読み込みしてください。';return;}
+  if(typeof THREE==='undefined'){bootFail('three');return;}
+  if(!webglOK()){bootFail('webgl');return;}
   const coarse=matchMedia('(pointer:coarse)').matches;const small=Math.min(screen.width,screen.height)<900;const q=SETTINGS.quality!=='auto'?SETTINGS.quality:(coarse&&small?'low':coarse?'mid':'high');
   try{scene=new THREE.Scene();initGeo();makeMaterials();modelMats(null);signalMats();initRenderer(q);
     skyMesh=buildSky();buildRain();PERSIST.push(hemi,sun,sun.target,skyMesh,rainMesh,cockpit);
     makePlayer();PERSIST.push(PLAYER.model.grp,PLAYER.headL,PLAYER.headL.target);PLAYER.model.grp.visible=false;
     loadMap('town');setEnv('day');}
-  catch(e){$('loadMsg').textContent='初期化に失敗しました：'+e.message;console.error(e);return;}
+  catch(e){console.error(e);bootFail(/webgl/i.test(String(e&&e.message))?'webgl':'init',e&&e.message);return;}
+  // 3D表示の中断（WebGLコンテキストの喪失）：運転を一時停止して知らせる。復帰は three.js が行う
+  renderer.domElement.addEventListener('webglcontextlost',()=>{if(STAGE.running&&!STAGE.over&&!STAGE.paused)togglePause();sysNotice('lost');},false);
+  renderer.domElement.addEventListener('webglcontextrestored',()=>{sysNotice('restored');},false);
   VOICE.on=SETTINGS.voice;buildControls();bindKeys();applyTouch();resizeView();window.addEventListener('resize',()=>{resizeView();applyMirrors();});
   $('btnPause').onclick=togglePause;$('btnCam').onclick=toggleView;$('btnSound').onclick=()=>{SETTINGS.sound=!SETTINGS.sound;SFX.init();SFX.setOn(SETTINGS.sound);store('mdk_settings',SETTINGS);toast('info',SETTINGS.sound?'サウンド オン':'サウンド オフ',0,'');};
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&STAGE.running&&!STAGE.paused&&!STAGE.over)togglePause();});
@@ -5328,9 +5399,14 @@ function boot(data){
     renderAt(P,T){cockpit.visible=false;renderer.setRenderTarget(null);renderer.setScissorTest(false);renderer.setViewport(0,0,window.innerWidth,window.innerHeight);camera.position.set(P[0],P[1],P[2]);camera.lookAt(T[0],T[1],T[2]);renderPeds(0);if(skyMesh)skyMesh.position.set(camera.position.x,0,camera.position.z);sun.position.set(P[0]+80,(P[1]||0)+120,P[2]+50);sun.target.position.set(T[0],T[1],T[2]);renderer.render(scene,camera);},
     setView(m){viewMode=m;applyMirrors();},setEnv(m){setEnv(m);},get P(){return PLAYER;},get J2(){return J;},renderer:()=>renderer,camera:()=>camera,scene:()=>scene,dbgB:{BUILT,clearOfRoads,overlapsBuilt,CITYB:typeof CITYB!=='undefined'?CITYB:null},
     SIGNS:()=>SIGNDATA,signCanvas:(id,px)=>signCanvas(id,px),signMissing:()=>signArtMissing(),auto(on,opts){AUTO.on=!!on;AUTO.agent=null;Object.assign(AUTO,opts||{});if(!on)INPUT.auto=null;},AUTO,STAGES,MAPS,dbg:()=>autoDbg(),planner:(l)=>autoPlanner(l),answer:()=>choiceAnswerOK(),dev:{locateDbg,isDrivable,drvAt,drvProject,corners,inNode,connAt,locate,makeDrivePath,obstAhead,laneGapAt,nearHazards,leaderOnPath,wantsExit,wantedDecel,tryLaneChange,parkTarget:()=>typeof PARK!=='undefined'&&PARK.target?{x:PARK.target.x,z:PARK.target.z,za:PARK.target.za,zb:PARK.target.zb}:null,streetParkJudge:()=>streetParkJudge(),PK:()=>JSON.parse(JSON.stringify(PK,(k,v)=>typeof v==='function'||(v&&v.var)?undefined:v))}};}
-// フォントを待ってから起動（標識の文字のため）
+// フォントを待ってから起動（標識の文字のため）。フォントのCSSは起動を止めないよう media="print" で読み込んでいる（src/head.html）。
+// CSSは最大5秒待ち、読み込めたら画面にも使う。フォント本体はそのあと最大2.5秒待つ。間に合わなければフォントなしで起動する
+function fontCssReady(ms){const l=document.getElementById('fontCss');return new Promise(res=>{if(!l){res();return;}
+  const ok=()=>{l.media='all';res();};const st=l.getAttribute('data-st');if(st==='ok'||l.sheet){ok();return;}if(st==='err'){res();return;}
+  l.addEventListener('load',ok);l.addEventListener('error',()=>res());setTimeout(res,ms);});}
 setTimeout(()=>{const go=()=>{(window.claude&&window.claude.hot&&window.claude.hot.ready)?window.claude.hot.ready(boot):boot((window.claude&&window.claude.hot&&window.claude.hot.data)||{});};
-  let done=false;const once=()=>{if(!done){done=true;go();}};try{Promise.all([document.fonts.load('700 20px "BIZ UDPGothic"'),document.fonts.load('20px "Dela Gothic One"'),document.fonts.load('700 20px "Saira Condensed"')]).then(once,once);}catch(e){once();}setTimeout(once,2500);},30);
+  let done=false;const once=()=>{if(!done){done=true;go();}};
+  fontCssReady(5000).then(()=>{try{Promise.all([document.fonts.load('700 20px "BIZ UDPGothic"'),document.fonts.load('20px "Dela Gothic One"'),document.fonts.load('700 20px "Saira Condensed"')]).then(once,once);}catch(e){once();}setTimeout(once,2500);});},30);
 
 
 // ===== 14_autopilot.js : 自動運転（お手本・テスト用）。AI車の判断をプレイヤーの車に使う =====

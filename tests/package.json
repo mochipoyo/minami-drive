@@ -1,0 +1,14 @@
+{
+  "name": "minami-drive-tests",
+  "private": true,
+  "type": "module",
+  "description": "みなみ町ドライブ教習の動作確認（Playwright）。公開用の index.html には含まれません。",
+  "scripts": {
+    "test": "node run.mjs",
+    "screens": "node screens.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.0",
+    "three": "0.128.0"
+  }
+}

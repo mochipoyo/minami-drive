@@ -116,15 +116,19 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(0.05,Math.max
   renderPeds(dt);adaptRes(dt);cullTick();
   renderAll(STAGE.running&&viewMode==='cockpit'&&SETTINGS.mirrors);}
 function boot(data){
-  if(data&&data.settings)Object.assign(SETTINGS,data.settings);if(data&&data.best)BEST=Object.assign({},data.best,BEST);
+  if(data&&data.settings)Object.assign(SETTINGS,cleanSettings(Object.assign({},SETTINGS,data.settings)));if(data&&data.best)BEST=Object.assign({},cleanBest(data.best),BEST);
   if(window.claude&&window.claude.hot&&window.claude.hot.snapshot){try{window.claude.hot.snapshot(()=>({settings:SETTINGS,best:BEST}));}catch(e){}}
-  if(typeof THREE==='undefined'){$('loadMsg').textContent='3D表示の読み込みに失敗しました。ネットワーク接続を確認して再読み込みしてください。';return;}
+  if(typeof THREE==='undefined'){bootFail('three');return;}
+  if(!webglOK()){bootFail('webgl');return;}
   const coarse=matchMedia('(pointer:coarse)').matches;const small=Math.min(screen.width,screen.height)<900;const q=SETTINGS.quality!=='auto'?SETTINGS.quality:(coarse&&small?'low':coarse?'mid':'high');
   try{scene=new THREE.Scene();initGeo();makeMaterials();modelMats(null);signalMats();initRenderer(q);
     skyMesh=buildSky();buildRain();PERSIST.push(hemi,sun,sun.target,skyMesh,rainMesh,cockpit);
     makePlayer();PERSIST.push(PLAYER.model.grp,PLAYER.headL,PLAYER.headL.target);PLAYER.model.grp.visible=false;
     loadMap('town');setEnv('day');}
-  catch(e){$('loadMsg').textContent='初期化に失敗しました：'+e.message;console.error(e);return;}
+  catch(e){console.error(e);bootFail(/webgl/i.test(String(e&&e.message))?'webgl':'init',e&&e.message);return;}
+  // 3D表示の中断（WebGLコンテキストの喪失）：運転を一時停止して知らせる。復帰は three.js が行う
+  renderer.domElement.addEventListener('webglcontextlost',()=>{if(STAGE.running&&!STAGE.over&&!STAGE.paused)togglePause();sysNotice('lost');},false);
+  renderer.domElement.addEventListener('webglcontextrestored',()=>{sysNotice('restored');},false);
   VOICE.on=SETTINGS.voice;buildControls();bindKeys();applyTouch();resizeView();window.addEventListener('resize',()=>{resizeView();applyMirrors();});
   $('btnPause').onclick=togglePause;$('btnCam').onclick=toggleView;$('btnSound').onclick=()=>{SETTINGS.sound=!SETTINGS.sound;SFX.init();SFX.setOn(SETTINGS.sound);store('mdk_settings',SETTINGS);toast('info',SETTINGS.sound?'サウンド オン':'サウンド オフ',0,'');};
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&STAGE.running&&!STAGE.paused&&!STAGE.over)togglePause();});
@@ -135,7 +139,12 @@ function boot(data){
     renderAt(P,T){cockpit.visible=false;renderer.setRenderTarget(null);renderer.setScissorTest(false);renderer.setViewport(0,0,window.innerWidth,window.innerHeight);camera.position.set(P[0],P[1],P[2]);camera.lookAt(T[0],T[1],T[2]);renderPeds(0);if(skyMesh)skyMesh.position.set(camera.position.x,0,camera.position.z);sun.position.set(P[0]+80,(P[1]||0)+120,P[2]+50);sun.target.position.set(T[0],T[1],T[2]);renderer.render(scene,camera);},
     setView(m){viewMode=m;applyMirrors();},setEnv(m){setEnv(m);},get P(){return PLAYER;},get J2(){return J;},renderer:()=>renderer,camera:()=>camera,scene:()=>scene,dbgB:{BUILT,clearOfRoads,overlapsBuilt,CITYB:typeof CITYB!=='undefined'?CITYB:null},
     SIGNS:()=>SIGNDATA,signCanvas:(id,px)=>signCanvas(id,px),signMissing:()=>signArtMissing(),auto(on,opts){AUTO.on=!!on;AUTO.agent=null;Object.assign(AUTO,opts||{});if(!on)INPUT.auto=null;},AUTO,STAGES,MAPS,dbg:()=>autoDbg(),planner:(l)=>autoPlanner(l),answer:()=>choiceAnswerOK(),dev:{locateDbg,isDrivable,drvAt,drvProject,corners,inNode,connAt,locate,makeDrivePath,obstAhead,laneGapAt,nearHazards,leaderOnPath,wantsExit,wantedDecel,tryLaneChange,parkTarget:()=>typeof PARK!=='undefined'&&PARK.target?{x:PARK.target.x,z:PARK.target.z,za:PARK.target.za,zb:PARK.target.zb}:null,streetParkJudge:()=>streetParkJudge(),PK:()=>JSON.parse(JSON.stringify(PK,(k,v)=>typeof v==='function'||(v&&v.var)?undefined:v))}};}
-// フォントを待ってから起動（標識の文字のため）
+// フォントを待ってから起動（標識の文字のため）。フォントのCSSは起動を止めないよう media="print" で読み込んでいる（src/head.html）。
+// CSSは最大5秒待ち、読み込めたら画面にも使う。フォント本体はそのあと最大2.5秒待つ。間に合わなければフォントなしで起動する
+function fontCssReady(ms){const l=document.getElementById('fontCss');return new Promise(res=>{if(!l){res();return;}
+  const ok=()=>{l.media='all';res();};const st=l.getAttribute('data-st');if(st==='ok'||l.sheet){ok();return;}if(st==='err'){res();return;}
+  l.addEventListener('load',ok);l.addEventListener('error',()=>res());setTimeout(res,ms);});}
 setTimeout(()=>{const go=()=>{(window.claude&&window.claude.hot&&window.claude.hot.ready)?window.claude.hot.ready(boot):boot((window.claude&&window.claude.hot&&window.claude.hot.data)||{});};
-  let done=false;const once=()=>{if(!done){done=true;go();}};try{Promise.all([document.fonts.load('700 20px "BIZ UDPGothic"'),document.fonts.load('20px "Dela Gothic One"'),document.fonts.load('700 20px "Saira Condensed"')]).then(once,once);}catch(e){once();}setTimeout(once,2500);},30);
+  let done=false;const once=()=>{if(!done){done=true;go();}};
+  fontCssReady(5000).then(()=>{try{Promise.all([document.fonts.load('700 20px "BIZ UDPGothic"'),document.fonts.load('20px "Dela Gothic One"'),document.fonts.load('700 20px "Saira Condensed"')]).then(once,once);}catch(e){once();}setTimeout(once,2500);});},30);
 
