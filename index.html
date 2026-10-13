@@ -4247,7 +4247,7 @@ function showMenu(cat){STAGE.running=false;STAGE.menu=true;$('hud').hidden=true;
     <div class="tabs" role="tablist" aria-label="教習の種類">${cats.map(c=>`<button role="tab" class="tab" data-k="${c.k}" aria-selected="${c.k===cat}"><b>${esc(c.t)}</b><small>${esc(c.sub)}</small></button>`).join('')}</div>
     ${rows?`<table class="genbo"><thead><tr><th>No.</th><th>教習項目</th><th style="text-align:right">最高点</th><th>判定</th></tr></thead><tbody>${rows}</tbody></table>`:''}${extra}
     <div class="btnRow"><button class="ghost" id="bHelp">操作方法</button><button class="ghost" id="bSet">設定</button><button class="ghost" id="bAbout">このゲームについて・出典</button></div>
-    <p class="small">採点はゲーム独自の基準（100点からの減点、70点以上かつ重大違反なしで合格）です。実際の技能検定の採点基準とは異なります。</p>${STORE_OK?'':'<p class="small">このブラウザでは記録や設定を保存できないため、ページを閉じると消えます（プライベートブラウズなどの場合）。</p>'}</div></div>`);
+    <p class="small">採点はゲーム独自の基準（100点からの減点、70点以上かつ重大違反なしで合格）です。実際の技能検定の採点基準とは異なります。</p>${STORE_OK?'':'<p class="small">このブラウザでは記録や設定を保存できない状態のため、再読み込みしたりページを閉じたりすると消えます（サイトデータの保存をブロックしている場合など）。</p>'}</div></div>`);
   document.querySelectorAll('.tabs .tab').forEach(b=>b.onclick=()=>{store('mdk_tab',b.dataset.k);showMenu(b.dataset.k);const t=document.querySelector(`.tabs .tab[data-k="${b.dataset.k}"]`);t&&t.focus({preventScroll:true});});
   document.querySelectorAll('tr.row').forEach(tr=>{const go=()=>showIntro(+tr.dataset.i);tr.onclick=go;tr.onkeydown=(e)=>{if(e.key==='Enter')go();};});
   if(cat==='sign'&&typeof bindSignMenu==='function')bindSignMenu();
