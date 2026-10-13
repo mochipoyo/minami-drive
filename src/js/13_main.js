@@ -126,6 +126,9 @@ function boot(data){
     makePlayer();PERSIST.push(PLAYER.model.grp,PLAYER.headL,PLAYER.headL.target);PLAYER.model.grp.visible=false;
     loadMap('town');setEnv('day');}
   catch(e){console.error(e);bootFail(/webgl/i.test(String(e&&e.message))?'webgl':'init',e&&e.message);return;}
+  // 3D表示の中断（WebGLコンテキストの喪失）：運転を一時停止して知らせる。復帰は three.js が行う
+  renderer.domElement.addEventListener('webglcontextlost',()=>{if(STAGE.running&&!STAGE.over&&!STAGE.paused)togglePause();sysNotice('lost');},false);
+  renderer.domElement.addEventListener('webglcontextrestored',()=>{sysNotice('restored');},false);
   VOICE.on=SETTINGS.voice;buildControls();bindKeys();applyTouch();resizeView();window.addEventListener('resize',()=>{resizeView();applyMirrors();});
   $('btnPause').onclick=togglePause;$('btnCam').onclick=toggleView;$('btnSound').onclick=()=>{SETTINGS.sound=!SETTINGS.sound;SFX.init();SFX.setOn(SETTINGS.sound);store('mdk_settings',SETTINGS);toast('info',SETTINGS.sound?'サウンド オン':'サウンド オフ',0,'');};
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&STAGE.running&&!STAGE.paused&&!STAGE.over)togglePause();});
