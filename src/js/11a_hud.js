@@ -18,16 +18,17 @@ function buildControls(){const bar=$('ctrlBar');bar.innerHTML='';for(const[id,la
     if(id==='hn'||id==='lkL'||id==='lkR'){const dn=(e)=>{e.preventDefault();act(id,true);},up=(e)=>{e.preventDefault();act(id,false);};b.addEventListener('pointerdown',dn);b.addEventListener('pointerup',up);b.addEventListener('pointerleave',up);b.addEventListener('pointercancel',up);b.addEventListener('contextmenu',(e)=>e.preventDefault());}
     else b.addEventListener('click',(e)=>{e.preventDefault();act(id,true);b.blur();});}
   // ペダル・ハンドル（タッチ）
-  const ped=(el,key)=>{const on=(e)=>{e.preventDefault();INPUT[key]=true;el.classList.add('down');el.setPointerCapture&&el.setPointerCapture(e.pointerId);},off=(e)=>{INPUT[key]=false;el.classList.remove('down');};
+  const ped=(el,key)=>{const on=(e)=>{e.preventDefault();INPUT[key]=true;el.classList.add('down');try{el.setPointerCapture&&el.setPointerCapture(e.pointerId);}catch(x){}},off=(e)=>{INPUT[key]=false;el.classList.remove('down');};
     el.addEventListener('pointerdown',on);el.addEventListener('pointerup',off);el.addEventListener('pointercancel',off);};
   ped($('pedAcc'),'touchAcc');ped($('pedBrake'),'touchBrk');
   const wc=$('wheel');let dragging=false,startA=0,base=0;const ang=(e)=>{const r=wc.getBoundingClientRect();return Math.atan2(e.clientX-(r.left+r.width/2),-(e.clientY-(r.top+r.height/2)));};
-  wc.addEventListener('pointerdown',(e)=>{e.preventDefault();dragging=true;startA=ang(e);base=WHEEL.a;wc.setPointerCapture(e.pointerId);});
+  wc.addEventListener('pointerdown',(e)=>{e.preventDefault();dragging=true;startA=ang(e);base=WHEEL.a;try{wc.setPointerCapture(e.pointerId);}catch(x){}});
   wc.addEventListener('pointermove',(e)=>{if(!dragging)return;let d=wrapA(ang(e)-startA);WHEEL.a=clamp(base+d,-Math.PI*0.95,Math.PI*0.95);startA=ang(e);base=WHEEL.a;});
   const end=()=>{dragging=false;};wc.addEventListener('pointerup',end);wc.addEventListener('pointercancel',end);WHEEL.drag=()=>dragging;
   // 視線（ドラッグで見回す）
   const gl=$('gl');let lx=null;gl.addEventListener('pointerdown',(e)=>{if(e.pointerType==='mouse'&&e.button===0)lx=e.clientX;});window.addEventListener('pointermove',(e)=>{if(lx!==null)INPUT.dragLook=clamp((e.clientX-lx)/window.innerWidth*3,-1.6,1.6);});
-  window.addEventListener('pointerup',()=>{lx=null;INPUT.dragLook=0;});}
+  window.addEventListener('pointerup',()=>{lx=null;INPUT.dragLook=0;});
+  WHEEL.release=()=>{dragging=false;lx=null;INPUT.dragLook=0;};}
 const WHEEL={a:0,drag:()=>false};
 function drawWheel(){const c=$('wheel');if(c.offsetParent===null)return;const x=c.getContext('2d');const W=c.width;x.clearRect(0,0,W,W);x.save();x.translate(W/2,W/2);x.rotate(WHEEL.a);
   x.lineWidth=26;x.strokeStyle='rgba(20,24,28,.85)';x.beginPath();x.arc(0,0,W/2-20,0,7);x.stroke();x.lineWidth=4;x.strokeStyle='rgba(255,255,255,.35)';x.beginPath();x.arc(0,0,W/2-20,0,7);x.stroke();
@@ -43,7 +44,12 @@ const KEYMAP={KeyB:'belt',KeyR:'gear',KeyP:'pb',KeyQ:'bl',KeyE:'br',KeyF:'hz',Ke
 function bindKeys(){window.addEventListener('keydown',(e)=>{if(e.target&&(e.target.tagName==='INPUT'))return;const k=e.code;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(k))e.preventDefault();
     if(KEY[k]&&!['KeyH','KeyZ','KeyC'].includes(k))return;KEY[k]=true;if(KEYMAP[k])act(KEYMAP[k],true);if(k==='KeyV')toggleView();if(k==='Escape')togglePause();});
   window.addEventListener('keyup',(e)=>{KEY[e.code]=false;if(['KeyH','KeyZ','KeyC'].includes(e.code))act(KEYMAP[e.code],false);});
-  window.addEventListener('blur',()=>{for(const k in KEY)KEY[k]=false;INPUT.lookL=INPUT.lookR=false;});}
+  window.addEventListener('blur',releaseInputs);window.addEventListener('pagehide',releaseInputs);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)releaseInputs();});}
+// 押しっぱなしの防止：フォーカスを失う・画面が隠れるとキーやタッチの離した合図が届かないことがあるので、すべて離した状態にする
+function releaseInputs(){for(const k in KEY)KEY[k]=false;INPUT.lookL=INPUT.lookR=false;INPUT.touchAcc=INPUT.touchBrk=false;INPUT.dragLook=0;
+  for(const id of['pedAcc','pedBrake']){const el=$(id);if(el)el.classList.remove('down');}if(WHEEL.release)WHEEL.release();
+  const p=PLAYER;if(p&&p.horn){p.horn=false;SFX.horn&&SFX.horn(false);}}
 function toggleView(){const order=['cockpit','chase','top'];viewMode=order[(order.indexOf(viewMode)+1)%order.length];if(viewMode==='chase'&&PLAYER){const f=fwd(PLAYER.h);camera.position.set(PLAYER.x-f.x*7.5,(PLAYER.y||0)+3.1,PLAYER.z-f.z*7.5);}applyMirrors();toast('info',{cockpit:'運転席の視点',chase:'後ろからの視点',top:'上からの視点'}[viewMode],0,'');}
 let hudT=0;
 function updateHud(dt){const p=PLAYER;if(!p)return;if(!STAGE.paused)coachT-=dt;if(coachT<=0)$('coach').classList.add('hide');
