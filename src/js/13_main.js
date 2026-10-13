@@ -139,7 +139,12 @@ function boot(data){
     renderAt(P,T){cockpit.visible=false;renderer.setRenderTarget(null);renderer.setScissorTest(false);renderer.setViewport(0,0,window.innerWidth,window.innerHeight);camera.position.set(P[0],P[1],P[2]);camera.lookAt(T[0],T[1],T[2]);renderPeds(0);if(skyMesh)skyMesh.position.set(camera.position.x,0,camera.position.z);sun.position.set(P[0]+80,(P[1]||0)+120,P[2]+50);sun.target.position.set(T[0],T[1],T[2]);renderer.render(scene,camera);},
     setView(m){viewMode=m;applyMirrors();},setEnv(m){setEnv(m);},get P(){return PLAYER;},get J2(){return J;},renderer:()=>renderer,camera:()=>camera,scene:()=>scene,dbgB:{BUILT,clearOfRoads,overlapsBuilt,CITYB:typeof CITYB!=='undefined'?CITYB:null},
     SIGNS:()=>SIGNDATA,signCanvas:(id,px)=>signCanvas(id,px),signMissing:()=>signArtMissing(),auto(on,opts){AUTO.on=!!on;AUTO.agent=null;Object.assign(AUTO,opts||{});if(!on)INPUT.auto=null;},AUTO,STAGES,MAPS,dbg:()=>autoDbg(),planner:(l)=>autoPlanner(l),answer:()=>choiceAnswerOK(),dev:{locateDbg,isDrivable,drvAt,drvProject,corners,inNode,connAt,locate,makeDrivePath,obstAhead,laneGapAt,nearHazards,leaderOnPath,wantsExit,wantedDecel,tryLaneChange,parkTarget:()=>typeof PARK!=='undefined'&&PARK.target?{x:PARK.target.x,z:PARK.target.z,za:PARK.target.za,zb:PARK.target.zb}:null,streetParkJudge:()=>streetParkJudge(),PK:()=>JSON.parse(JSON.stringify(PK,(k,v)=>typeof v==='function'||(v&&v.var)?undefined:v))}};}
-// フォントを待ってから起動（標識の文字のため）
+// フォントを待ってから起動（標識の文字のため）。フォントのCSSは起動を止めないよう media="print" で読み込んでいる（src/head.html）。
+// CSSは最大5秒待ち、読み込めたら画面にも使う。フォント本体はそのあと最大2.5秒待つ。間に合わなければフォントなしで起動する
+function fontCssReady(ms){const l=document.getElementById('fontCss');return new Promise(res=>{if(!l){res();return;}
+  const ok=()=>{l.media='all';res();};const st=l.getAttribute('data-st');if(st==='ok'||l.sheet){ok();return;}if(st==='err'){res();return;}
+  l.addEventListener('load',ok);l.addEventListener('error',()=>res());setTimeout(res,ms);});}
 setTimeout(()=>{const go=()=>{(window.claude&&window.claude.hot&&window.claude.hot.ready)?window.claude.hot.ready(boot):boot((window.claude&&window.claude.hot&&window.claude.hot.data)||{});};
-  let done=false;const once=()=>{if(!done){done=true;go();}};try{Promise.all([document.fonts.load('700 20px "BIZ UDPGothic"'),document.fonts.load('20px "Dela Gothic One"'),document.fonts.load('700 20px "Saira Condensed"')]).then(once,once);}catch(e){once();}setTimeout(once,2500);},30);
+  let done=false;const once=()=>{if(!done){done=true;go();}};
+  fontCssReady(5000).then(()=>{try{Promise.all([document.fonts.load('700 20px "BIZ UDPGothic"'),document.fonts.load('20px "Dela Gothic One"'),document.fonts.load('700 20px "Saira Condensed"')]).then(once,once);}catch(e){once();}setTimeout(once,2500);});},30);
 

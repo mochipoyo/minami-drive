@@ -1,7 +1,9 @@
 <title>みなみ町ドライブ教習</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Dela+Gothic+One&family=Saira+Condensed:wght@500;700&display=swap">
+<!-- フォントのCSSは、読み込みが止まってもゲームの起動を止めないよう media="print" で読み込み、読み込めたら画面にも使う（起動の待ち方は 13_main.js） -->
+<link rel="stylesheet" id="fontCss" media="print" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=Dela+Gothic+One&family=Saira+Condensed:wght@500;700&display=swap">
+<script>(function(l){if(!l)return;l.addEventListener('load',function(){l.media='all';l.setAttribute('data-st','ok');});l.addEventListener('error',function(){l.setAttribute('data-st','err');});})(document.getElementById('fontCss'));</script>
 <style>
 /* Layout: full-bleed 3D road view; HUD clusters sit at the screen edges like an instrument panel; menus are a driving-school record card (教習原簿) with hanko stamps. */
 :root{
