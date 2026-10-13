@@ -65,6 +65,7 @@ export default async function ({ browser, url, rep }) {
     await ctx.close();
   }
   // 6) 端末の回転（横 → 縦）：描画の大きさと縦横比が新しい画面に合う
+  //    ソフトウェア描画（SwiftShader）では運転中の1フレームが重く、resize イベントが5〜8秒ほど遅れて届くことがあるので、長めに待つ
   {
     const { ctx, page, errors } = await openPage(browser, url, { viewport: { width: 844, height: 390 }, touch: true });
     await waitMenu(page);
@@ -72,7 +73,7 @@ export default async function ({ browser, url, rep }) {
     await page.waitForTimeout(800);
     await page.setViewportSize({ width: 390, height: 844 });
     let ok = true;
-    try { await page.waitForFunction(() => { const v = new THREE.Vector2(); window.__sim.renderer().getSize(v); return v.x === innerWidth && v.y === innerHeight && window.__sim.camera().aspect < 1; }, null, { timeout: 15000 }); } catch (e) { ok = false; }
+    try { await page.waitForFunction(() => { const v = new THREE.Vector2(); window.__sim.renderer().getSize(v); return v.x === innerWidth && v.y === innerHeight && window.__sim.camera().aspect < 1; }, null, { timeout: 30000 }); } catch (e) { ok = false; }
     const r = await page.evaluate(() => { const v = new THREE.Vector2(); window.__sim.renderer().getSize(v); return { size: [v.x, v.y], aspect: +window.__sim.camera().aspect.toFixed(2), win: [innerWidth, innerHeight] }; });
     rep.ok(S, '端末を回転させても、描画の大きさと縦横比が新しい画面に合う', ok && errors.length === 0, JSON.stringify(r) + ' ' + errors.slice(0, 1).join(''));
     await ctx.close();
