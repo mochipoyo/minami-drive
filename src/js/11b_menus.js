@@ -1,6 +1,15 @@
 // ===== 11b_menus.js : 教習原簿（メニュー）・結果・設定 =====
-const SETTINGS=Object.assign({sound:true,voice:true,mirrors:true,shadow:true,touch:'auto',sideOnPhone:false,quality:'auto',rearCam:true},store('mdk_settings')||{});
-let BEST=store('mdk_best')||{};
+// 保存データは形と値を確かめてから使う（壊れた値・型の違う値で表示が崩れたり、タッチ操作が消えたりしないように）。正しい値はそのまま使う
+const SETTINGS_DEF={sound:true,voice:true,mirrors:true,shadow:true,touch:'auto',sideOnPhone:false,quality:'auto',rearCam:true};
+function cleanSettings(v){const o=Object.assign({},SETTINGS_DEF);if(!v||typeof v!=='object'||Array.isArray(v))return o;
+  for(const k in v){const d=SETTINGS_DEF[k],x=v[k];if(d===undefined){o[k]=x;continue;}
+    if(k==='touch'?['auto','on','off'].includes(x):k==='quality'?['auto','high','mid','low'].includes(x):typeof x===typeof d)o[k]=x;}return o;}
+function cleanBest(v){const o={};if(!v||typeof v!=='object'||Array.isArray(v))return o;
+  for(const k in v){const e=v[k];if(e&&typeof e==='object'&&typeof e.score==='number'&&isFinite(e.score))o[k]=Object.assign({},e,{score:Math.max(0,Math.min(100,e.score)),pass:!!e.pass});}return o;}
+const SETTINGS=cleanSettings(store('mdk_settings'));
+let BEST=cleanBest(store('mdk_best'));
+// 保存できるか（プライベートブラウズなどで保存できない環境では、メニューで知らせる）
+const STORE_OK=(()=>{try{localStorage.setItem('mdk_probe','1');localStorage.removeItem('mdk_probe');return true;}catch(e){return false;}})();
 function ov(html){const o=$('ov');o.innerHTML=html;o.hidden=false;o.scrollTop=0;const b=o.querySelector('button.go');if(b)setTimeout(()=>b.focus({preventScroll:true}),30);return o;}
 function closeOv(){$('ov').hidden=true;$('ov').innerHTML='';}
 const esc=(s)=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -18,7 +27,7 @@ function showMenu(cat){STAGE.running=false;STAGE.menu=true;$('hud').hidden=true;
     <div class="tabs" role="tablist" aria-label="教習の種類">${cats.map(c=>`<button role="tab" class="tab" data-k="${c.k}" aria-selected="${c.k===cat}"><b>${esc(c.t)}</b><small>${esc(c.sub)}</small></button>`).join('')}</div>
     ${rows?`<table class="genbo"><thead><tr><th>No.</th><th>教習項目</th><th style="text-align:right">最高点</th><th>判定</th></tr></thead><tbody>${rows}</tbody></table>`:''}${extra}
     <div class="btnRow"><button class="ghost" id="bHelp">操作方法</button><button class="ghost" id="bSet">設定</button><button class="ghost" id="bAbout">このゲームについて・出典</button></div>
-    <p class="small">採点はゲーム独自の基準（100点からの減点、70点以上かつ重大違反なしで合格）です。実際の技能検定の採点基準とは異なります。</p></div></div>`);
+    <p class="small">採点はゲーム独自の基準（100点からの減点、70点以上かつ重大違反なしで合格）です。実際の技能検定の採点基準とは異なります。</p>${STORE_OK?'':'<p class="small">このブラウザでは記録や設定を保存できないため、ページを閉じると消えます（プライベートブラウズなどの場合）。</p>'}</div></div>`);
   document.querySelectorAll('.tabs .tab').forEach(b=>b.onclick=()=>{store('mdk_tab',b.dataset.k);showMenu(b.dataset.k);const t=document.querySelector(`.tabs .tab[data-k="${b.dataset.k}"]`);t&&t.focus({preventScroll:true});});
   document.querySelectorAll('tr.row').forEach(tr=>{const go=()=>showIntro(+tr.dataset.i);tr.onclick=go;tr.onkeydown=(e)=>{if(e.key==='Enter')go();};});
   if(cat==='sign'&&typeof bindSignMenu==='function')bindSignMenu();
@@ -32,7 +41,7 @@ function showIntro(i){const s=STAGES[i];if(s.cat)store('mdk_tab',s.cat);ov(`<div
   $('bGo').onclick=()=>{SFX.init();try{SFX.ctx&&SFX.ctx.resume&&SFX.ctx.resume();}catch(e){}SFX.setOn(SETTINGS.sound);closeOv();startStage(i);};$('bBack').onclick=showMenu;$('bHelp2').onclick=()=>showHelp(()=>showIntro(i));}
 // 自由走行：時間帯・天気を選ぶ
 const ENVOPTS=[['day','昼・晴れ'],['evening','夕方'],['night','夜'],['rain','雨'],['fog','霧']];
-function envChips(s){const cur=store('mdk_env_'+s.id)||s.env||'day';s.env=cur;s.envLabel=(ENVOPTS.find(e=>e[0]===cur)||ENVOPTS[0])[1];
+function envChips(s){let cur=store('mdk_env_'+s.id);if(!ENVOPTS.some(e=>e[0]===cur))cur=s.env||'day';s.env=cur;s.envLabel=(ENVOPTS.find(e=>e[0]===cur)||ENVOPTS[0])[1];
   return`<div class="envPick" role="radiogroup" aria-label="時間帯と天気">${ENVOPTS.map(([k,t])=>`<button class="tab envc" role="radio" data-env="${k}" aria-checked="${k===cur}" aria-selected="${k===cur}"><b>${t}</b></button>`).join('')}</div>`;}
 function bindEnvChips(s){document.querySelectorAll('.envc').forEach(b=>b.onclick=()=>{s.env=b.dataset.env;s.envLabel=(ENVOPTS.find(e=>e[0]===s.env)||ENVOPTS[0])[1];store('mdk_env_'+s.id,s.env);
   document.querySelectorAll('.envc').forEach(x=>{const on=x===b;x.setAttribute('aria-checked',on);x.setAttribute('aria-selected',on);});const pl=document.querySelector('.card header .plate');if(pl)pl.textContent=s.envLabel;});}

@@ -2,7 +2,9 @@
 const SIGN_SRC='名称・番号・意味は「道路標識、区画線及び道路標示に関する命令」（標識令）別表第一（2026年9月1日施行の版、e-Gov法令検索）によります。絵は見分けやすさを優先して簡略化したイメージで、実際の様式（別表第二）とは形・文字・比率などが異なります。地名・番号は架空です。';
 const SIGN_ORDER=['reg','warn','inst','guide','aux'];
 function signThumb(id,px){const c=signCanvas(id,px*2);c.style.width=px+'px';c.style.height=px+'px';c.className='sgimg';return c;}
-function signMenuExtra(){const best=store('mdk_sign_quiz')||null;
+// クイズの最高記録（形と値を確かめて読む）
+function quizBest(){const b=store('mdk_sign_quiz');return b&&typeof b==='object'&&typeof b.best==='number'&&isFinite(b.best)?{best:Math.max(0,Math.min(10,Math.round(b.best)))}:null;}
+function signMenuExtra(){const best=quizBest();
   return`<div class="signBox"><p class="lede">道路標識は5種類（規制・警戒・指示・案内・補助）。標識令の別表第一にある <b>${SIGNDATA.length}種類</b>（様式の違いを含めると${SIGNDATA.reduce((a,e)=>a+e.v.length,0)}）をすべて収録しています。上の教習では「標識の練習コース」を走って、実際の場面で確かめられます。</p>
     <div class="btnRow"><button class="go" id="bBook">標識図鑑をひらく</button><button class="ghost" id="bQuiz">標識クイズ（10問）</button>${best?`<span class="small" style="align-self:center">クイズの最高 ${best.best}/10</span>`:''}</div>
     <p class="small">${esc(SIGN_SRC)}</p></div>`;}
@@ -45,7 +47,7 @@ function signQuiz(){const pool=SIGNDATA.filter(e=>e.c!=='guide'||Math.random()<0
       $('sqFb').innerHTML=`<p class="${right?'okt':'ngt'}">${right?'◎ 正解':'× 正解は「'+esc(Q.e.n)+'」'}（${esc(Q.e.no)}）</p><p>${esc(Q.e.m)}</p><div class="btnRow"><button class="go" id="sqNext">${i<qs.length-1?'次へ':'結果を見る'}</button></div>`;
       $('sqNext').onclick=()=>{i++;if(i<qs.length)show();else done();};$('sqNext').focus({preventScroll:true});});
     $('sqQuit').onclick=()=>showMenu('sign');};
-  const done=()=>{const b=store('mdk_sign_quiz')||{best:0};if(ok>b.best){b.best=ok;store('mdk_sign_quiz',b);}
+  const done=()=>{const b=quizBest()||{best:0};if(ok>b.best){b.best=ok;store('mdk_sign_quiz',b);}
     ov(`<div class="card"><header><div><div class="eyebrow">標識クイズ</div><h2>結果</h2></div></header><div class="body"><div class="resTop"><div class="resScore">${ok}<small> / ${qs.length}</small></div></div>
       <p class="lede" style="margin-top:10px">${ok>=9?'すばらしい！ほとんどの標識を見分けられました。':ok>=6?'よくできました。まちがえた標識は図鑑で確かめましょう。':'図鑑で、形と色の決まり（赤い丸は禁止、青は指示、黄色のひし形は注意）から覚えていきましょう。'}</p>
       <div class="btnRow"><button class="go" id="sqAgain">もう一度</button><button class="ghost" id="sqBook">図鑑をひらく</button><button class="ghost" id="sqMenu">原簿にもどる</button></div></div></div>`);

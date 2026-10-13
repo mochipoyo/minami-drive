@@ -116,7 +116,7 @@ function frame(now){requestAnimationFrame(frame);const dt=Math.min(0.05,Math.max
   renderPeds(dt);adaptRes(dt);cullTick();
   renderAll(STAGE.running&&viewMode==='cockpit'&&SETTINGS.mirrors);}
 function boot(data){
-  if(data&&data.settings)Object.assign(SETTINGS,data.settings);if(data&&data.best)BEST=Object.assign({},data.best,BEST);
+  if(data&&data.settings)Object.assign(SETTINGS,cleanSettings(Object.assign({},SETTINGS,data.settings)));if(data&&data.best)BEST=Object.assign({},cleanBest(data.best),BEST);
   if(window.claude&&window.claude.hot&&window.claude.hot.snapshot){try{window.claude.hot.snapshot(()=>({settings:SETTINGS,best:BEST}));}catch(e){}}
   if(typeof THREE==='undefined'){bootFail('three');return;}
   if(!webglOK()){bootFail('webgl');return;}
