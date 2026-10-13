@@ -54,10 +54,11 @@ function showHelp(back){const touch=isTouch();
     <li><b>［◀ 合図］［合図 ▶］</b>ウインカー。もう一度押すと消えます。曲がり終えてハンドルを戻すと自動で消えます。</li>
     <li><b>［ベルト］［シフト］［Pブレーキ］</b>発進前の準備です。シフトは止まっているときに押すと D と R が切り替わります（最初は P）。</li>
     <li><b>［ハザード］［ライト］［ホーン］</b>ハザードランプ・前照灯・クラクション。ホーンは押している間だけ鳴ります。</li>
-    <li><b>右上のボタン</b>視点の切り替え・サウンド・一時停止。一時停止から操作ガイドを見直せます。</li></ul>`;
+    <li><b>右上のボタン</b>視点の切り替え・サウンド・一時停止。一時停止から操作ガイドを見直せます。</li>
+    <li><b>［怒鳴る］</b>特殊モードのときだけ、速度計の横に出ます。押すと「危ねえだろ〇ズ人間！」と怒鳴ります（採点には影響しません）。</li></ul>`;
   const K=`<div class="keys"><div><kbd>W</kbd>/<kbd>↑</kbd> アクセル</div><div><kbd>S</kbd>/<kbd>↓</kbd> ブレーキ（長押しで強く）</div><div><kbd>Space</kbd> 急ブレーキ</div><div><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> ハンドル</div>
   <div><kbd>Q</kbd>/<kbd>E</kbd> 左右の合図（ウインカー）</div><div><kbd>F</kbd> ハザード</div><div><kbd>H</kbd> クラクション</div><div><kbd>L</kbd> ライト</div><div><kbd>B</kbd> シートベルト</div><div><kbd>R</kbd> シフト（D⇔R）</div><div><kbd>P</kbd> パーキングブレーキ</div>
-  <div><kbd>Z</kbd>/<kbd>C</kbd> 左／右を見る（押すと少しの間・長押しで見続ける。シフトRのときは後ろを見る）</div><div><kbd>V</kbd> 視点切替</div><div><kbd>Esc</kbd> 一時停止</div><div>マウスのドラッグで見回し</div></div>`;
+  <div><kbd>Z</kbd>/<kbd>C</kbd> 左／右を見る（押すと少しの間・長押しで見続ける。シフトRのときは後ろを見る）</div><div><kbd>V</kbd> 視点切替</div><div><kbd>Esc</kbd> 一時停止</div><div>マウスのドラッグで見回し</div><div><kbd>G</kbd> 怒鳴る（特殊モードだけ。採点には影響しません）</div></div>`;
   const live=touch&&STAGE.running&&!STAGE.over;
   ov(`<div class="card"><header><h2>操作方法</h2></header><div class="body">${touch?`<h3 class="hh">スマホ・タブレット（タッチ操作）</h3>${T}<details class="more"><summary>キーボードで遊ぶとき（パソコン用）</summary>${K}</details>`:`<h3 class="hh">キーボード</h3>${K}<details class="more"><summary>スマホ・タブレットで遊ぶとき</summary>${T}</details>`}
   <p class="small" style="margin-top:12px">オートマ車なので、ブレーキを離すとゆっくり進みます（クリープ現象）。次に押すボタンは黄色く光ります。</p>
@@ -71,8 +72,8 @@ function showSettings(back){const row=(id,label,val)=>`<label class="opt" for="$
     store('mdk_settings',SETTINGS);SFX.setOn(SETTINGS.sound);VOICE.on=SETTINGS.voice;applyTouch();applyMirrors();back();};}
 function showAbout(){ov(`<div class="card"><header><h2>このゲームについて</h2></header><div class="body">
   <p class="lede">交通ルールの説明は、2026年10月時点で確認できた法令・公的機関の情報をもとにしています。法令は改正されることがあるため、実際の運転では道路標識・標示、警察官の指示、最新の公式情報に従ってください。</p>
-  <ul class="vlist"><li class="good"><b>確認できている内容</b><span class="law">生活道路の法定速度30km/h（2026年9月1日施行）、自転車の右側を通過するときの安全な速度（第18条第3項・2026年4月1日施行。目安は1m程度の間隔、取れないときは20〜30km/h程度＝警察庁資料）、信号・一時停止・踏切・横断歩道・緊急自動車・合図の時期・灯火・座席ベルト・携帯電話、地震のときの運転者の措置（交通の方法に関する教則）。高速道路の最高・最低速度、通行帯、合流、停止表示器材。駐車・停車の禁止場所（第44条・第45条・第47条）。道路標識の種類・意味（標識令 別表第一）。妨害運転（あおり運転）の対象となる11の行為・罰則（第117条の2の2第1項第8号・第117条の2第1項第4号）と、追いつかれた車両の義務（第27条）、初心者マークの車の保護（第71条第5号の4）。</span></li>
-  <li class="info"><b>ゲーム上の単純化</b><span class="law">減点の点数、速度超過の判定（+2km/hまで許容）、歩行者との間隔「1m未満かつ15km/h超」、車間距離「1秒未満が3秒続く」、駐車場の中の速度「15km/h」、切り返しの数え方、駐車の枠に入ったかの判定などはゲーム独自の目安です。教習所のコースの寸法は実際の教習所・試験場とは異なります。標識・若葉マークの絵は見分けやすさを優先した簡略化で、実際の様式とは形・比率などが異なります。あおり運転の場面の流れ（相手の車の動き）はゲーム独自のものです。町・店・学校・駅・道路の名前はすべて架空です。</span></li>
+  <ul class="vlist"><li class="good"><b>確認できている内容</b><span class="law">生活道路の法定速度30km/h（2026年9月1日施行）、自転車の右側を通過するときの安全な速度（第18条第3項・2026年4月1日施行。目安は1m程度の間隔、取れないときは20〜30km/h程度＝警察庁資料）、信号・一時停止・踏切・横断歩道・緊急自動車・合図の時期・灯火・座席ベルト・携帯電話、地震のときの運転者の措置（交通の方法に関する教則）。高速道路の最高・最低速度、通行帯、合流、停止表示器材。駐車・停車の禁止場所（第44条・第45条・第47条）。道路標識の種類・意味（標識令 別表第一）。妨害運転（あおり運転）の対象となる11の行為・罰則（第117条の2の2第1項第8号・第117条の2第1項第4号）と、追いつかれた車両の義務（第27条）、初心者マークの車の保護（第71条第5号の4）。特殊モードの、高齢の歩行者などの通行を妨げない義務（第71条第2号の2）、歩行者の横断の方法（第12条・第13条）、警音器を鳴らしてよい場合（第54条第2項）。</span></li>
+  <li class="info"><b>ゲーム上の単純化</b><span class="law">減点の点数、速度超過の判定（+2km/hまで許容）、歩行者との間隔「1m未満かつ15km/h超」、車間距離「1秒未満が3秒続く」、駐車場の中の速度「15km/h」、切り返しの数え方、駐車の枠に入ったかの判定などはゲーム独自の目安です。教習所のコースの寸法は実際の教習所・試験場とは異なります。標識・若葉マークの絵は見分けやすさを優先した簡略化で、実際の様式とは形・比率などが異なります。あおり運転の場面の流れ（相手の車の動き）はゲーム独自のものです。特殊モードの場面（逆走車や、急に渡ってくる歩行者の動き）と、その対応の判定（すれ違うときの速度など）もゲーム独自のものです。町・店・学校・駅・道路の名前はすべて架空です。</span></li>
   <li class="info"><b>確認が必要な点</b><span class="law">高速道路で路肩を走ったときに適用される条文（ゲームでは「確認中」と表示）。法令・運用は改正されることがあります。</span></li></ul>
   <p class="small" style="margin-top:12px">出典</p><ul class="small">${SOURCES.map(([t,u])=>`<li><a href="${u}" target="_blank" rel="noopener">${esc(t)}</a></li>`).join('')}</ul>
   <div class="btnRow"><button class="go" id="bOk">もどる</button></div></div></div>`);$('bOk').onclick=showMenu;}
@@ -86,13 +87,13 @@ function showResult(extra){const s=STAGES[STAGE.idx];const pass=J.score>=70&&!J.
   const prec=extra&&extra.prec!==undefined?`<div class="small">停止位置との差 ${extra.prec.toFixed(2)}m ${extra.prec<0.5?'（ぴったり！）':''}</div>`:'';
   const checks=extra&&extra.checks?`<p class="small" style="margin-top:14px">${esc(extra.checksTitle||'確認した項目')}</p><ul class="vlist">${extra.checks.map(c=>`<li class="${c.bad?'':'good'}"><b>${c.bad?'×':'○'} ${esc(c.t)}</b>${c.law?`<span class="law">${esc(c.law)}</span>`:''}</li>`).join('')}</ul>`:'';
   const note=extra&&extra.note?`<p class="lede" style="margin-top:12px">${esc(tx(extra.note))}</p>`:'';
-  const t=Math.floor(STAGE.time);
+  const t=Math.floor(STAGE.time);const nx=STAGES[STAGE.idx+1];const hasNext=!!nx&&!(nx.special&&!s.special);// 特殊モードへは「次の教習へ」でつなげない
   const catT=(MENU_CATS.find(c=>c.k===s.cat)||{t:'教習'}).t;const no=STAGES.filter(x=>x.cat===s.cat).indexOf(s)+1;
   ov(`<div class="card"><header><div><div class="eyebrow">${esc(catT)} ・ 教習${no} の結果</div><h2>${esc(s.name)}</h2></div></header><div class="body">
     <div class="resTop">${sc?`<span class="stamp big ${pass?'':'ng'}">${pass?'合格':'不合格'}</span><div><div class="resScore">${J.score}<small>点</small></div><div class="small">走行時間 ${Math.floor(t/60)}分${t%60}秒${J.major?'・重大な違反あり':''}</div>${prec}</div>`:'<div class="small">フリー走行（採点なし）</div>'}</div>
     ${note}${checks}${J.log.length?`<p class="small" style="margin-top:14px">減点された運転</p><ul class="vlist">${J.log.map(vItem).join('')}</ul>`:(sc?(extra&&extra.checks&&extra.checks.some(c=>c.bad)?'<p class="lede" style="margin-top:12px">減点はありませんでしたが、上の×の項目を見直しておきましょう。</p>':'<p class="lede" style="margin-top:12px">減点なし。見事な運転でした。</p>'):'')}
     ${J.good.length?`<p class="small" style="margin-top:14px">よかった運転</p><ul class="vlist">${J.good.map(g=>`<li class="good"><b>${esc(GOOD[g])}</b></li>`).join('')}</ul>`:''}
-    <div class="btnRow"><button class="go" id="bAgain">もう一度</button>${STAGE.idx<STAGES.length-1?'<button class="ghost" id="bNext">次の教習へ</button>':''}<button class="ghost" id="bMenu2">原簿にもどる</button></div></div></div>`);
+    <div class="btnRow"><button class="go" id="bAgain">もう一度</button>${hasNext?'<button class="ghost" id="bNext">次の教習へ</button>':''}<button class="ghost" id="bMenu2">原簿にもどる</button></div></div></div>`);
   $('bAgain').onclick=()=>{closeOv();startStage(STAGE.idx);};$('bMenu2').onclick=showMenu;if($('bNext'))$('bNext').onclick=()=>showIntro(STAGE.idx+1);}
 function showCrash(reason){const lesson=STAGE.lessonHint;ov(`<div class="card"><header><div><div class="eyebrow">運転を中止しました</div><h2>事故が起きました</h2></div><span class="stamp ng">中止</span></header><div class="body">
   <p class="lede"><b>${esc(tx(reason))}</b></p>${lesson?`<p class="lede">${esc(tx(lesson))}</p>`:''}<ul class="vlist"><li><b>事故のときの義務</b><br>${esc(RULES.crash.x)}<span class="law">${esc(RULES.crash.law)}</span></li>${J.log.filter(l=>l.id!=='crash').slice(-3).map(vItem).join('')}</ul>
