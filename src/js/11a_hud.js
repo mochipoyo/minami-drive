@@ -38,9 +38,10 @@ function act(id,down){const p=PLAYER;if(!p||!STAGE.running||STAGE.over)return;if
     case'bl':if(down)setBlink('L');break;case'br':if(down){setBlink('R');coachStep();}break;case'hz':if(down){p.hazard=!p.hazard;SFX.click();onPlayerAction('hazard',p.hazard);}break;
     case'lt':if(down){p.lights=!p.lights;SFX.click();}break;case'hn':if(down&&!p.horn){p.horn=true;SFX.horn(true);onPlayerAction('horn');}if(!down){p.horn=false;SFX.horn(false);}break;
     case'lkL':case'lkR':{const k=id==='lkL'?'L':'R';// タップで約1.6秒、長押しで押している間だけ見る
-      if(down){INPUT['look'+k]=true;INPUT['lookStart'+k]=p.t;}else{INPUT['look'+k]=false;INPUT['lookUntil'+k]=Math.max(INPUT['lookUntil'+k]||0,(INPUT['lookStart'+k]||p.t)+1.6);coachStep();}break;}}
+      if(down){INPUT['look'+k]=true;INPUT['lookStart'+k]=p.t;}else{INPUT['look'+k]=false;INPUT['lookUntil'+k]=Math.max(INPUT['lookUntil'+k]||0,(INPUT['lookStart'+k]||p.t)+1.6);coachStep();}break;}
+    case'shout':if(down&&typeof shout==='function')shout();break;}// 怒鳴る（特殊モードだけ。12g）
   hudT=0;updateHints();}
-const KEYMAP={KeyB:'belt',KeyR:'gear',KeyP:'pb',KeyQ:'bl',KeyE:'br',KeyF:'hz',KeyL:'lt',KeyH:'hn',KeyZ:'lkL',KeyC:'lkR'};
+const KEYMAP={KeyB:'belt',KeyR:'gear',KeyP:'pb',KeyQ:'bl',KeyE:'br',KeyF:'hz',KeyL:'lt',KeyH:'hn',KeyZ:'lkL',KeyC:'lkR',KeyG:'shout'};
 function bindKeys(){window.addEventListener('keydown',(e)=>{if(e.target&&(e.target.tagName==='INPUT'))return;const k=e.code;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(k))e.preventDefault();
     if(KEY[k]&&!['KeyH','KeyZ','KeyC'].includes(k))return;KEY[k]=true;if(KEYMAP[k])act(KEYMAP[k],true);if(k==='KeyV')toggleView();if(k==='Escape')togglePause();});
   window.addEventListener('keyup',(e)=>{KEY[e.code]=false;if(['KeyH','KeyZ','KeyC'].includes(e.code))act(KEYMAP[e.code],false);});

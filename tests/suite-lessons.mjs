@@ -1,4 +1,4 @@
-// 26教習：メニューから開始 → 運転 → 最初からやり直す → 原簿（メニュー）にもどる。代表的な教習は最後まで走って結果を確認
+// 26教習と特殊モード：メニューから開始 → 運転 → 最初からやり直す → 原簿（メニュー）にもどる。代表的な教習は最後まで走って結果を確認
 import { openPage, waitMenu, startStage, runAuto, ovText } from './lib.mjs';
 
 // 自動運転（お手本）で最後まで走れることを確認済みの教習（乱数を固定した場合）
@@ -9,7 +9,11 @@ export default async function ({ browser, url, rep }) {
   const { ctx, page, errors } = await openPage(browser, url);
   await waitMenu(page);
   const stages = await page.evaluate(() => window.__sim.STAGES.map((s, i) => ({ id: s.id, cat: s.cat, name: s.name, i, scoring: s.scoring !== false })));
-  rep.ok(S, '教習が26あること', stages.length === 26, `${stages.length}教習`);
+  // 既存の26教習（順番も同じ）のあとに、特殊モードが1つ
+  const BASE26 = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 'e1', 'e2', 'e3', 'e4', 'a1', 'e5', 'c1', 'c2', 'c3', 'f2', 'p1', 'p2', 'p3', 'p4', 'sg1', 'sg2', 'sg3', 'a2', 'a3'];
+  const ids = stages.map(s => s.id);
+  rep.ok(S, '既存の26教習がそろっていて、順番も変わらない', BASE26.every((id, i) => ids[i] === id), ids.slice(0, 26).join(','));
+  rep.ok(S, 'そのあとに特殊モードが1つある（26＋1）', stages.length === 27 && ids[26] === 'sp1' && stages[26].cat === 'special', `${stages.length}教習`);
   const only = (process.env.ONLY_STAGES || '').split(',').filter(Boolean);
   for (const st of stages) {
     if (only.length && !only.includes(st.id)) continue;
@@ -52,6 +56,6 @@ export default async function ({ browser, url, rep }) {
     await page.keyboard.press('Escape'); await page.waitForSelector('#bMenu', { timeout: 5000 }).catch(() => {}); await page.click('#bMenu').catch(() => {});
     await waitMenu(page, 15000).catch(() => {});
   }
-  rep.ok(S, 'エラーが出ない（26教習）', errors.length === 0, errors.slice(0, 3).join(' / '));
+  rep.ok(S, 'エラーが出ない（26教習と特殊モード）', errors.length === 0, errors.slice(0, 3).join(' / '));
   await ctx.close();
 }

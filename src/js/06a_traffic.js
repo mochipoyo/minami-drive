@@ -15,7 +15,9 @@ class Veh{
 }
 // ---- 車線ごとの並び（毎フレーム作り直す） ----
 function rebuildLaneLists(){for(const l of NET.lanes)l.agents.length=0;for(const c of NET.conns)c.agents.length=0;
-  for(const v of VEH){if(v.hidden||v.offLane)continue;if(v.conn)v.conn.agents.push({o:v,u:v.cu});else if(v.lane){v.lane.agents.push({o:v,u:v.u});if(v.lc&&v.lc.from&&Math.abs(v.d)>0.9){const f=v.lc.from;f.agents.push({o:v,u:f.uOf(v.lane.sOf(v.u))});}}}
+  for(const v of VEH){if(v.hidden||v.offLane)continue;if(v.conn)v.conn.agents.push({o:v,u:v.cu});else if(v.lane){v.lane.agents.push({o:v,u:v.u});if(v.lc&&v.lc.from&&Math.abs(v.d)>0.9){const f=v.lc.from;f.agents.push({o:v,u:f.uOf(v.lane.sOf(v.u))});}
+      // 逆走車（特殊モード 12g）：車体がかかっている反対向きの車線にも、向かってくる車（速さがマイナス）として入れる
+      if(v.wrongLane){const w=v.wrongLane;w.agents.push({o:v,u:w.uOf(v.lane.sOf(v.u)),vv:-v.v});}}}
   // プレイヤー：今いる車線（またぐ場合は両方）
   const p=PLAYER;if(p&&!p.ghost&&STAGE.running){p.lanesNow=[];const q=p.loc;
     if(q&&q.kind==='road'){const r=q.road;for(const dir of[1,-1]){for(const l of r.allLanes(dir)){if(q.s<l.s0-1||q.s>l.s1+1)continue;const w=l.wAt(q.s);if(w<0.5)continue;

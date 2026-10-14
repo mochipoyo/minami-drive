@@ -50,7 +50,7 @@ function startStage(i){const s=STAGES[i];STAGE.idx=i;
   const p=PLAYER;p.lights=false;if(s.autoReady){p.belt=true;p.gear='D';p.pbrake=true;}if(s.rolling){p.belt=true;p.gear='D';p.pbrake=false;p.v=s.rolling/KMH;J.started=true;}
   NAV.goal=s.goalPose?s.goalPose():(s.goalRS?goalFrom(s.goalRS):s.goal?goalFrom(townPose(s.goal)):null);NAV.wps=(s.way||[]).map(k=>NET.nodeById[k]).filter(Boolean);NAV.inWp=false;STAGE.goal=NAV.goal;makeGoalMarker(NAV.goal);
   s.setup&&s.setup();
-  $('hud').hidden=false;$('stageName').textContent=s.name;viewMode=s.view||'cockpit';applyTouch();applyMirrors();closeOv();
+  $('hud').hidden=false;$('stageName').textContent=s.name;$('btnShout').hidden=!s.shout;$('shoutBubble').hidden=true;viewMode=s.view||'cockpit';applyTouch();applyMirrors();closeOv();// 怒鳴るボタンは特殊モードだけ（12g）
   NAV.turn=null;NAV.turnDist=99;STAGE.atGoal=false;STAGE.goalHint=0;STAGE.gapHint=0;STAGE.lastStepMsg=null;
   coachStep(true);if(s.coach)setTimeout(()=>{if(STAGE.running&&STAGE.idx===i&&J.started)coach(s.coach,8,1);},400);
   if(isTouch()&&!store('mdk_guide_seen'))setTimeout(()=>{if(STAGE.running&&!STAGE.over)showGuide(true);},400);}
