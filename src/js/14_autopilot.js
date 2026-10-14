@@ -1,20 +1,22 @@
 // ===== 14_autopilot.js : 自動運転（お手本・テスト用）。AI車の判断をプレイヤーの車に使う =====
 const AUTO={on:false,agent:null,lcT:0,lastLc:null,exit:false,maxKmh:0,pbSet:false,turn:null,shift:null,goalT:0,seqT:0};
 function autoInit(){const p=PLAYER;AUTO.agent={kind:'car',type:'compact',L:p.L,W:p.W,v:0,d:0,dGoal:0,lane:null,u:0,conn:null,cu:0,next:null,decideOnly:true,vpref:0.97,aggr:0.2,lcCool:2,lcT:0,
-  x:p.x,z:p.z,h:p.h,y:0,id:-1,m:{grp:new THREE.Group()},planner:autoPlanner,hidden:false,exitPlan:AUTO.exit};AUTO.lastLc=null;AUTO.pbSet=false;AUTO.turn=null;AUTO.shift=null;AUTO.goalT=0;AUTO.seqT=0;AUTO.startDone=false;AUTO.dAnc=undefined;AUTO.dWant=null;AUTO.rec=null;AUTO.stallT=0;AUTO.goalBlink=false;AUTO.jamHz=false;AUTO.jamHzUsed=false;AUTO.jamStopT=0;}
+  x:p.x,z:p.z,h:p.h,y:0,id:-1,m:{grp:new THREE.Group()},planner:autoPlanner,hidden:false,exitPlan:AUTO.exit};AUTO.lastLc=null;AUTO.pbSet=false;AUTO.turn=null;AUTO.shift=null;AUTO.goalT=0;AUTO.seqT=0;AUTO.startDone=false;AUTO.dAnc=undefined;AUTO.dWant=null;AUTO.rec=null;AUTO.stallT=0;AUTO.goalBlink=false;AUTO.jamHz=false;AUTO.jamHzUsed=false;AUTO.jamStopT=0;AUTO.pass=null;}
 // ナビの経路から、この車線の先の交差点で曲がる方向
 function autoPlanner(l){if(STAGE.autoPlan){const t=STAGE.autoPlan(l);if(t)return t;}if(AUTO.replan&&AUTO.replan.road===l.road&&AUTO.replan.dir===l.dir)return AUTO.replan.turn;
   const n=l.endNode();if(!n||n.kind!=='x')return null;const G=NAV.goal;
   if(!NAV.wps.length&&!(G&&G.road)){// 行き先なし（自由走行）：地図の外に出る道は選ばない
     const moves=movesFrom(l);const ok=[...moves.keys()].filter(t=>{const c=moves.get(t)[0];const r2=c.next.road;const far=c.next.dir>0?r2.endNode:r2.startNode;return t!=='U'&&far&&far.kind!=='portal';});return ok.length?pick(ok):null;}
   const path=navPath(n,l.inLeg);if(!path)return null;let ex=path.length>=2?legTo(n,path[1]):path.exitLeg;if(!ex)return null;return legTurn(n,l.inLeg,ex);}
-function autoCancelLc(a){const c=a.lc;if(!c)return;const s=a.lane.sOf(a.u);const f=c.from;if(f&&f.road===a.lane.road){a.lane=f;a.u=clamp(f.uOf(s),0,f.len);a.d=0;}a.lc=null;AUTO.lastLc=null;}
+function autoCancelLc(a){const c=a.lc;if(!c)return;const s=a.lane.sOf(a.u);const f=c.from;if(f&&f.road===a.lane.road){a.lane=f;a.u=clamp(f.uOf(s),0,f.len);a.d=0;a.next=null;/* 移る先の車線で決めた接続路を使わない（元の車線の接続路を選び直す） */}a.lc=null;AUTO.lastLc=null;}
 function autoSetLane(a,l,keepD){if(!a.lane||a.lane.road!==l.road)a.planTurn=null;a.lane=l;a.next=null;a.lc=null;if(!keepD)a.d=0;else a.d=clamp(a.d,-l.w/2,l.w/2);a.stopDone=false;a.xingDone=false;a.wait=0;}
 function autoSync(){const p=PLAYER,a=AUTO.agent;a.v=Math.max(0,p.v);a.x=p.x;a.z=p.z;a.h=p.h;a.y=p.y;const q=p.loc;
   if(q&&q.kind==='road'){const al=Math.cos(wrapA(p.h-q.road.at(q.s).h));const dir=al>0?1:-1;
     if(a.conn){AUTO.lastConn=a.conn;a.conn=null;}
     if(!a.lane||a.lane.road!==q.road||a.lane.dir!==dir){let l=q.lane&&q.lane.dir===dir?q.lane:null;if(!l){let bd=1e9;for(const c of q.road.allLanes(dir)){if(q.s<c.s0||q.s>c.s1)continue;const dd=Math.abs(q.t-c.tAt(q.s));if(dd<bd){bd=dd;l=c;}}}
       if(l){const straight=AUTO.lastConn&&AUTO.lastConn.turn==='S'&&AUTO.lastConn.next===l;autoSetLane(a,l,straight);}}
+    // 車線変更が（止まっている間などに）論理上だけ終わって、車体はまだ隣の車線にいるとき：実際にいる車線に合わせ直す（隣の車線の車の前に、合図なしに割り込まないように）
+    else if(!a.lc&&q.lane&&q.lane!==a.lane&&q.lane.dir===dir&&q.lane.kind==='main'&&a.lane.kind==='main'&&q.s>=a.lane.s0&&q.s<=a.lane.s1&&Math.abs(q.t-a.lane.tAt(q.s))>a.lane.w/2+0.3){autoSetLane(a,q.lane,false);AUTO.lastLc=null;}
     if(a.lane){if(q.s<a.lane.s0-1||q.s>a.lane.s1+1){const nl=a.lane.next[0]&&a.lane.next[0].lane;if(nl&&q.s>=nl.s0-1&&q.s<=nl.s1+1){const kd=a.d;autoSetLane(a,nl);a.d=kd;}}a.u=clamp(a.lane.uOf(q.s),0,a.lane.len);}}
   else if(q&&q.kind==='node'){if(!a.conn&&a.lane&&a.next&&a.next.conn)a.conn=a.next.conn;if(!a.conn&&a.lane){const nx=chooseNext(a);if(nx&&nx.conn)a.conn=nx.conn;}
     if(a.conn)a.cu=connProject(a.conn,p.x,p.z).s;}}
@@ -63,6 +65,12 @@ function autoTick(dt){if(!AUTO.on||!STAGE.running||STAGE.over||STAGE.paused)retu
     AUTO.stopD=d;}else AUTO.stopD=null;}
   if(AUTO.lastLc&&!a.lc)a.lcCool=Math.max(a.lcCool||0,0.8);// 前の車線変更が終わるまで次の車線変更をしない
   updateVeh(a,dt);let acc=a.lastAcc||0;if(AUTO.maxKmh&&p.v*KMH>AUTO.maxKmh)acc=Math.min(acc,-0.5);
+  // 止まっている車をよけている途中：追い抜くまで右へ出た横位置を保つ（横にずれて障害物が「見えなく」なった瞬間に戻ると、車体の後ろが当たる）
+  // 保つのは、障害物がすぐ前（約7m以内）か横にあり、すでに半分以上は右へ出ているとき（よけ始めの段階では、対向車などを見た AI の判断（dGoal）に従う）
+  if(a.obRef&&a.obGap<Infinity&&a.dGoal>0.3)AUTO.pass={o:a.obRef,d:a.dGoal};
+  if(AUTO.pass){const o=AUTO.pass.o;const f=fwd(p.h);const fw=(o.x-p.x)*f.x+(o.z-p.z)*f.z;
+    if(fw<-(o.L/2+p.L/2+0.6)||!NET.obst.includes(o)||a.lc||a.conn||(a.lane&&a.lane.road!==o.road))AUTO.pass=null;
+    else if(fw<o.L/2+p.L/2+4&&(a.dAct||0)>AUTO.pass.d*0.5&&a.dGoal<AUTO.pass.d)a.dGoal=AUTO.pass.d;}
   // 車線変更の合図を出している間（まだ元の車線にいる）は、元の車線の前の車にも合わせる
   if(a.lc&&a.lc.from&&a.lc.from!==a.lane){const f=a.lc.from;const s=a.lane.sOf(a.u);const u=f.uOf(s);let g=Infinity,vl=0;
     for(const e of f.agents){if(e.o===p||e.o===a)continue;if(e.u>u){const gg=e.u-u-p.L/2-(e.o.L||4)/2;if(gg<g){g=gg;vl=e.vv!==undefined?e.vv:(e.o.v||0);}}}
@@ -85,7 +93,7 @@ function autoTick(dt){if(!AUTO.on||!STAGE.running||STAGE.over||STAGE.paused)retu
   // よける・戻る横の動き（1m前後動くときは、合図を出して約3秒たってから）
   // 実際の横位置（車線の中心から。右が正）
   const dAct=(J.road===a.lane.road&&J.dir===a.lane.dir)?(J.t2-a.lane.tAt(clamp(J.s,a.lane.s0,a.lane.s1)))*a.lane.dir:a.d;
-  if(AUTO.dAnc===undefined||a.lane!==AUTO.ancLane){AUTO.dAnc=a.d;AUTO.ancLane=a.lane;AUTO.shift=null;}
+  if(AUTO.dAnc===undefined||a.lane!==AUTO.ancLane){AUTO.dAnc=a.lc?0:a.d;AUTO.ancLane=a.lane;AUTO.shift=null;}// 車線変更で車線が変わったときの基準は新しい車線の中央（変更前の横位置を基準にすると、移り終わった直後にもう一度「寄せる」合図を出してしまう）
   AUTO.dWant=null;const latR=Math.min(0.8,0.12+0.25*Math.max(0,p.v));AUTO.latR=latR;
   if(!goal&&!a.lc&&!AUTO.lastLc&&!AUTO.turn&&!a.conn){const want=a.dGoal||0;const far=Math.abs(want-AUTO.dAnc)>0.45;
     if(far){const side=want>AUTO.dAnc?'R':'L';if(!AUTO.shift||AUTO.shift.side!==side){AUTO.shift={side,t:0};if(p.blink!==side&&!turnSoon)setBlink(side);}AUTO.shift.t+=dt;
@@ -100,14 +108,18 @@ function autoTick(dt){if(!AUTO.on||!STAGE.running||STAGE.over||STAGE.paused)retu
   a.dGoal=0;
   // 発進の合図は、車線に入ったら消す
   if(J.started&&!AUTO.startDone&&p.odo>12){AUTO.startDone=true;if(p.blink==='R'&&!AUTO.shift&&!a.lc&&!turnSoon)setBlink('R');}
-  // 車線変更：3秒前から合図（その間は横に動かない）
-  if(a.lc&&a.lc!==AUTO.lastLc){AUTO.lastLc=a.lc;AUTO.lcT=0;const side=a.lc.side>0?'R':'L';if(p.blink!==side)setBlink(side);}
+  // 車線変更：3秒前から合図（その間は横に動かない）。同じ側へ続けて移るとき（右折車線まで2本以上）は、出し続けている合図が3秒たっていればすぐ動く
+  if(a.lc&&a.lc!==AUTO.lastLc){AUTO.lastLc=a.lc;const side=a.lc.side>0?'R':'L';AUTO.lcT=(p.blink===side&&p.t-(p.blinkStart||0)>=3.1)?3.1:0;if(p.blink!==side)setBlink(side);}
   const turnSame=!a.conn&&a.next&&a.next.conn&&a.next.conn.turn===p.blink&&a.lane.len-a.u<130;// 右折車線に移ったあと、そのまま右折する：合図は消さない
+  const needMore=!a.conn&&a.next&&!a.next.conn&&a.next.need&&a.next.turn===p.blink;// まだ同じ側へ車線を移る必要がある（右折車線まで）：合図は消さない
   // 車線変更：実際に新しい車線の中央付近に着くまでは合図を出したまま
   if(a.lc){AUTO.lcT+=dt;if(AUTO.lcT<3.1){a.lc.t=0;a.d=a.lc.d0;// 動き出す直前に、もう一度すき間を確かめる
-      if(AUTO.lcT>2.6&&a.lc.from&&a.lc.from.road===a.lane.road&&!laneSafeNow(a,a.lane,a.lane.sOf(a.u))){const side=a.lc.side>0?'R':'L';autoCancelLc(a);a.lcCool=2.5;if(p.blink===side)p.blink=null;}}}else if(AUTO.lastLc&&!a.lc&&Math.abs(a.dAct||0)<0.55){AUTO.lastLc=null;if(p.blink&&!goal&&!turnSoon&&!turnSame)p.blink=null;}
+      if(AUTO.lcT>2.6&&a.lc.from&&a.lc.from.road===a.lane.road&&!laneSafeNow(a,a.lane,a.lane.sOf(a.u))){const side=a.lc.side>0?'R':'L';autoCancelLc(a);a.lcCool=2.5;if(p.blink===side)p.blink=null;}}}else if(AUTO.lastLc&&!a.lc&&Math.abs(a.dAct||0)<0.55){AUTO.lastLc=null;if(p.blink&&!goal&&!turnSoon&&!turnSame&&!needMore)p.blink=null;}
   // 右左折の合図（30m以上手前）
   if(!goal&&turnSoon&&p.blink!==a.next.conn.turn)setBlink(a.next.conn.turn);
+  // 右折車線へ移る必要があるとき：車線が始まる 45m 手前から右の合図を出しておく（出し続けて3秒たてば、車線が始まり次第すぐ移れる）
+  if(!goal&&!a.lc&&!a.conn&&a.next&&!a.next.conn&&a.next.need&&a.next.turn==='R'&&p.blink!=='R'){const tgt=a.next.need.find(l=>l.kind==='turnR'&&l.road===a.lane.road&&l.dir===a.lane.dir);
+    if(tgt){const s=a.lane.sOf(a.u);const dStart=a.lane.dir>0?tgt.s0-s:s-tgt.s1;if(dStart<45)setBlink('R');}}
   // 渋滞の最後尾：ハザードで後ろの車に知らせる（NEXCOの呼びかけ。法律上の義務ではない）
   if(a.lane.road.type==='EXP'&&!fault){const ld=leaderOnPath(a,320);const tail=ld.obj&&ld.vl<5&&ld.gap<300&&p.v>8;
     if(tail&&!AUTO.jamHzUsed&&!p.hazard){act('hz',true);AUTO.jamHz=true;AUTO.jamHzUsed=true;AUTO.jamT=0;}

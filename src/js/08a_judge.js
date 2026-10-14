@@ -46,7 +46,8 @@ function judgeUpdate(dt){const p=PLAYER;if(!p||STAGE.over)return;J.t+=dt;const f
     if(n&&n.kind==='x'){
       if(n.signal&&!A.crossed){const sig=SIGS.get(n.k);const st=sig?sig.stateFor(L):'G';if(st==='Y'&&A.prevSt!=='Y'&&dLine>0)A.yel={d:dLine,v:p.v};if(st==='G')A.yel=null;A.prevSt=st;
         if(dLine<=0&&p.v>0.3){A.crossed=true;A.lineSt=st;A.laneAtLine=A.lane;
-          if(st==='R')violate('red');else if(st==='Y'){const y=A.yel;if(y&&(y.v<1||y.d>y.v*y.v/(2*3.5)+y.v*0.6+1.5))violate('yellow',y.v<1?'止まっていた（またはほぼ止まっていた）ときに黄に変わったのに、停止線をこえました。':`黄に変わったとき停止線まで約${Math.round(y.d)}m・${Math.round(y.v*KMH)}km/hでした。`);}}
+          const linked=!!r.def.sigLink;// 同じ交差点の2本目の停止線（新宿の近い信号：手前の停止線で判定済み）：黄・矢印は問わない
+          if(st==='R')violate('red');else if(st==='Y'&&!linked){const y=A.yel;if(y&&(y.v<1||y.d>y.v*y.v/(2*3.5)+y.v*0.6+1.5))violate('yellow',y.v<1?'止まっていた（またはほぼ止まっていた）ときに黄に変わったのに、停止線をこえました。':`黄に変わったとき停止線まで約${Math.round(y.d)}m・${Math.round(y.v*KMH)}km/hでした。`);}}
         if(dLine>0&&dLine<3&&p.v<0.2&&(st==='Y'||st==='R')&&A.yel)praise('yellowOK');}
       if(!n.signal&&n.stopLegs.includes(L)&&!A.crossed&&dLine<=-0.4&&p.v>0.2){A.crossed=true;A.laneAtLine=A.lane;if(!A.stopped)violate('stopSign');else praise('stopOK');}
       if(!A.crossed&&dLine<=0&&p.v>0.2){A.crossed=true;A.laneAtLine=A.lane;}}
@@ -90,7 +91,7 @@ function nodeExit(N,p){if(!N.L||p.v<0)return;const n=N.n;let turn;
       if(el&&el.arrows&&!el.arrows.includes(turn))violate('laneArrow',`この車線は「${arrowWords(el.arrows)}」の車線でした。`);}
     if(turn==='R'&&N.lineSt==='RA')praise('yieldOK');}
   if(turn==='S'&&N.entryLane&&N.entryLane.arrows&&!N.entryLane.arrows.includes('S'))violate('laneArrow',`この車線は「${arrowWords(N.entryLane.arrows)}」の車線でした。`);
-  if(N.lineSt==='RA'&&turn!=='R')violate('red','右折の矢印信号で直進・左折しました。');}
+  if(N.lineSt==='RA'&&turn!=='R'&&!(N.entryRoad&&N.entryRoad.def.sigLink))violate('red','右折の矢印信号で直進・左折しました。');}
 function arrowWords(a){return a.split('').map(c=>c==='L'?'左折':c==='S'?'直進':'右折').join('・');}
 function railCheck(p,r,ft,sF,dt){const line=ft.s-J.dir*8;const dl=(line-sF)*J.dir;const X=XINGS.find(x=>x.f===ft);if(!X)return;
   const A=J.A;if(!A.xing)A.xing={stopped:false,lookL:false,lookR:false,stopT:0,entered:false};const S=A.xing;

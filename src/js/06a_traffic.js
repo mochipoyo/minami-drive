@@ -94,7 +94,13 @@ function updateLaneChange(v,dt){const c=v.lc;if(!c)return;c.t+=dt;const k=smooth
 function stopLineU(l){const n=l.endNode();if(!n||n.kind!=='x')return l.len;return l.len-stopEdgeDist(n,l.entryLeg());}
 function approachingNode(n,legs,dist,exclude){for(const o of VEH){if(o===exclude||o.hidden||o.conn||!o.lane)continue;const l=o.lane;if(l.endNode()!==n)continue;if(!legs.includes(l.entryLeg()))continue;
     const d=l.len-o.u;if(o.v>0.8&&(d<dist||d/o.v<6.5))return true;}
-  const p=PLAYER;if(p&&!p.ghost&&STAGE.running&&p.v>0.8&&exclude!==AUTO.agent){for(const L of legs){const dl=LEGDIR[L];const t=(p.x-n.x)*dl.dx+(p.z-n.z)*dl.dz;const off=Math.abs((p.x-n.x)*dl.dz-(p.z-n.z)*dl.dx);
+  const p=PLAYER;if(p&&!p.ghost&&STAGE.running&&p.v>0.8&&exclude!==AUTO.agent){
+    if(n.poly){// 多角形の交差点（斜めに道路が入る）：方角の軸ではなく、その脚の道路の実際の向きで「交差点へ向かっているか」を見る
+      for(const L of legs){const e=n.legs[L];if(!e)continue;const r=e.road;const P=r.at(e.end==='end'?r.len:0);const hIn=e.end==='end'?P.h:wrapA(P.h+Math.PI);const f=fwd(hIn);
+        const t=-((p.x-P.x)*f.x+(p.z-P.z)*f.z);const off=Math.abs((p.x-P.x)*f.z-(p.z-P.z)*f.x);const[lo,hi]=r.tRange(e.end==='end'?r.len:0);
+        if(t>-1&&(t<dist||t/p.v<7)&&t<150&&off<Math.max(Math.abs(lo),Math.abs(hi))+1&&Math.cos(wrapA(p.h-hIn))>0.7)return true;}
+      return false;}
+    for(const L of legs){const dl=LEGDIR[L];const t=(p.x-n.x)*dl.dx+(p.z-n.z)*dl.dz;const off=Math.abs((p.x-n.x)*dl.dz-(p.z-n.z)*dl.dx);
       const half=(L==='N'||L==='S')?n.hz:n.hx;if(t>half-1&&(t<dist||t/p.v<7)&&t<150&&off<((L==='N'||L==='S')?n.hx:n.hz)+1&&Math.cos(wrapA(p.h-legHeading[L]))>0.7)return true;}}
   return false;}
 function nodeBusy(n,exclude){for(const o of VEH){if(o===exclude||o.hidden)continue;if(o.sweptBy&&(o.sweptBy===exclude||(exclude===AUTO.agent&&o.sweptBy===PLAYER)))continue;if(o.conn&&o.conn.node===n)return true;}const p=PLAYER;if(p&&STAGE.running&&exclude!==AUTO.agent&&inNode(n,p.x,p.z,0.5))return true;return false;}
@@ -124,10 +130,10 @@ function updateVeh(v,dt){if(v.hidden)return;if(v.script){v.script(v,dt);return;}
   if(v.lc&&v.lc.from&&!v.conn&&Math.abs(v.d)>0.4&&v.lc.from.road===v.lane.road){const f=v.lc.from;const u=f.uOf(v.lane.sOf(v.u));for(const e of f.agents){if(e.o===v)continue;if(e.u>u){const gg=e.u-u-v.L/2-(e.o.L||4)/2;if(gg<gap){gap=gg;vl=e.vv!==undefined?e.vv:(e.o.v||0);}break;}}}
   if(!v.conn&&v.lane.road.type==='EXP'){const ob=obstAhead(v,220);if(ob&&ob.gap<gap){gap=ob.gap;vl=0;}}
   // 自転車・駐車車両の横を通る（同じ車線の左端にいるもの）
-  v.obGap=Infinity;if(!v.conn&&v.kind!=='bike'&&!v.lc){const lane=v.lane;let ob=null,og=Infinity;
+  v.obGap=Infinity;v.obRef=null;if(!v.conn&&v.kind!=='bike'&&!v.lc){const lane=v.lane;let ob=null,og=Infinity;
     const leftSoon=v.next&&v.next.conn&&v.next.conn.turn==='L'&&lane.len-v.u<45;// 左折の直前は自転車を追い越さない（後ろについて先に行かせる）
     if(ld.obj&&ld.obj.kind==='bike'&&ld.gap<30&&!leftSoon){ob={d:ld.obj.d||-(lane.w/2-0.55),W:ld.obj.W,bike:true};og=ld.gap;}
-    if(near.obst&&near.gap<30&&near.gap<og){ob={d:near.obst.dLane!==undefined?near.obst.dLane:-(lane.w/2-near.obst.W/2-0.2),W:near.obst.W,bike:false};og=near.gap;}
+    if(near.obst&&near.gap<30&&near.gap<og){ob={d:near.obst.dLane!==undefined?near.obst.dLane:-(lane.w/2-near.obst.W/2-0.2),W:near.obst.W,bike:false};og=near.gap;v.obRef=near.obst;}// obRef：自動運転（14）がよけている途中の横位置を保つために使う
     // 歩道のない道路を歩く人：間隔をあけて通る（第18条第2項）
     const wk=walkerAhead(v,45);if(wk&&wk.g<45){v0=Math.min(v0,Math.sqrt((20/3.6)**2+2*1.2*Math.max(0,wk.g-12)));}if(wk&&wk.g<30&&wk.g<og){ob={d:wk.d,W:0.6,bike:true,ped:wk.p};og=wk.g;}
     if(ob&&ob.ped){const s=lane.sOf(v.u);let reach;const dNow=v.dAct!==undefined?v.dAct:v.d;// 実際の横位置（自動運転では指令値と実際がずれる）
@@ -144,7 +150,8 @@ function updateVeh(v,dt){if(v.hidden)return;if(v.script){v.script(v,dt);return;}
     if(ob){v.obGap=og;const s=lane.sOf(v.u);const twoWay=lane.road.nF&&lane.road.nB;const rightIsOpp=twoWay&&lane.idx===lane.road.lanes(lane.dir).length-1&&lane.kind==='main';
       const canOpp=rightIsOpp&&lane.road.center!=='yellow'&&!oncomingNear(v,70);const nbR=lane.neighbor(1,s);
       const want=ob.d+ob.W/2+v.W/2+(ob.bike?(v.decideOnly?1.5:1.0):0.6);const maxD=lane.w/2-v.W/2+(canOpp?2.4:nbR?0:(twoWay&&oncomingNear(v,60)?-0.15:0.25));
-      v.dGoal=clamp(want,0,Math.max(0,maxD));if(v.d>=Math.min(want,maxD)-0.12&&maxD>=ob.d+ob.W/2+v.W/2+0.25){const clear=v.d-ob.d-ob.W/2-v.W/2;if(ob.bike&&clear<(v.decideOnly?1.45:1.0))v0=Math.min(v0,(v.decideOnly?25:22)/3.6);if(!ob.bike)v0=Math.min(v0,20/3.6);
+      v.dGoal=clamp(want,0,Math.max(0,maxD));const dNow=v.decideOnly&&v.dAct!==undefined?v.dAct:v.d;// 自動運転では指令値でなく実際の横位置で「よけ終わったか」を見る
+      if(dNow>=Math.min(want,maxD)-0.12&&maxD>=ob.d+ob.W/2+v.W/2+0.25){const clear=dNow-ob.d-ob.W/2-v.W/2;if(ob.bike&&clear<(v.decideOnly?1.45:1.0))v0=Math.min(v0,(v.decideOnly?25:22)/3.6);if(!ob.bike)v0=Math.min(v0,20/3.6);
         if(ld.obj&&ld.obj.kind==='bike'&&ob.bike){const l2=leaderOnPath(v,120,ld.obj);if(l2.gap<near.gap){gap=l2.gap;vl=l2.vl;}else{gap=near.gap;vl=near.vl;}}else if(!ob.bike){gap=ld.gap;vl=ld.vl;}}
       else if(og<12)v0=Math.min(v0,ob.bike?ld.vl:2);}}
   // 中央線のない狭い道路のすれ違い：左に寄せて速度を落とす。それでも幅が足りなければ手前で待つ
@@ -189,7 +196,8 @@ function updateVeh(v,dt){if(v.hidden)return;if(v.script){v.script(v,dt);return;}
     if(n&&n.kind==='x'&&blindNode(n,lane.entryLeg())){const vb=v.decideOnly?2.6:3.6;v0=Math.min(v0,Math.sqrt(vb*vb+2*1.6*Math.max(0,dEnd-1)));}
     if(n&&n.kind==='x'){const dLine=stopLineU(lane)-front;const leg=lane.entryLeg();
       if(n.signal){const sig=SIGS.get(n.k);const st=sig?sig.stateFor(leg):'G';
-        if(dLine>-0.3){let must=st==='R'||(st==='RA'&&turn!=='R');if(st==='Y')must=dLine>v.v*v.v/(2*3.2)+0.5;
+        if(dLine>-0.3){let must=st==='R'||(st==='RA'&&turn!=='R');if(st==='Y')must=dLine>v.v*v.v/(2*3.2)+0.5||(v.decideOnly&&v.v<0.5);// 自動運転：止まっているときに黄になったら出ない
+          if(lane.road.def.sigLink&&(st==='RA'||st==='Y'))must=false;// 同じ交差点の2本目の停止線（新宿の近い信号）：手前を通った車はそのまま抜ける
           if(st==='OFF'){must=!v.stopDone;if(dLine<1.5&&v.v<0.3){v.wait+=dt;if(v.wait>1.2)v.stopDone=true;}}
           if(amb&&must){must=false;v0=Math.min(v0,4);}if(AMB&&!amb&&AMB.active&&ambNearNode(n,v))must=true;
           // 交差点の先が詰まっている（第50条）
@@ -204,6 +212,10 @@ function updateVeh(v,dt){if(v.hidden)return;if(v.script){v.script(v,dt);return;}
         else{const pri=Object.keys(n.legs).filter(L=>L!==leg&&!n.stopLegs.includes(L));if(approachingNode(n,pri,40,v)||nodeBusy(n,v))stopGap=SG(stopGap,Math.max(dEnd,0)+0.2,v,'L155');}}
       else if(!amb&&dEnd<65&&(n.xwalk[leg]||(turn==='S'&&n.xwalk[OPP[leg]]))&&dLine>-0.5){// 信号のない交差点の横断歩道：渡ろうとしている人・渡っている人がいれば手前で止まる（第38条第1項）
         const Xs=XWALKS.filter(X=>X.node===n&&(X.L===leg||(turn==='S'&&X.L===OPP[leg])));if(Xs.some(X=>X.peds.some(q=>q.mode==='xcross'||(q.mode==='xwait'&&q.waitT>0.5))))stopGap=SG(stopGap,Math.max(0.1,dLine),v,'XW');}
+      // 自動運転（多角形の交差点）：信号のない交差点のすぐ先（45m未満）に信号があるときは、その信号も見て、赤なら手前の交差点に入らずに待つ（第50条）
+      if(v.decideOnly&&!n.signal&&n.poly&&!amb&&v.next&&v.next.conn&&dEnd>-0.3){const nl=v.next.conn.next;const n2=nl&&nl.endNode();
+        if(n2&&n2.kind==='x'&&n2.signal&&nl.len<45){const st2=SIGS.get(n2.k).stateFor(nl.entryLeg());const dLine2=dEnd+v.next.conn.len+stopLineU(nl);
+          let must2=st2==='R'||st2==='RA';if(st2==='Y')must2=dLine2>v.v*v.v/(2*3.2)+0.5;if(must2)stopGap=SG(stopGap,Math.max(0.1,dEnd-0.3),v,'L152b');}}
       if(!n.signal&&!n.stopLegs.includes(leg)&&!amb&&dEnd<40){const dChk=Math.max(6,v.v*v.v/(2*3)+3);
         {// 信号のない交差点：ほかの道に一時停止があればこちらは優先側（少しだけ控える）。なければ十分に速度を落として近づく
           const vj=(n.stopLegs.length||n.priority)?11:(v.decideOnly?5:6.5);if(Object.keys(n.legs).length>=3)v0=Math.min(v0,Math.sqrt(vj*vj+2*2.2*Math.max(0,dEnd-2)));}
@@ -231,6 +243,8 @@ function updateVeh(v,dt){if(v.hidden)return;if(v.script){v.script(v,dt);return;}
     v.sweptBy=null;if(v.kind==='car'&&!amb){const sb=sweptBlock(v,8);if(sb){stopGap=SG(stopGap,Math.max(0.1,sb.d-1.0),v,'L169');v.sweptBy=sb.o;}}
     if(c.turn==='R'&&!amb){const n=c.node;const wS=c.waitS!==undefined?c.waitS:(c.waitS=rightWaitS(c));
       if(v.cu<wS+0.3){const opp=OPP[c.from.inLeg];let clear=!approachingNode(n,[opp],50,v)&&!oncomingInNode(v,n);if(n.signal){const st=SIGS.get(n.k).stateFor(c.from.inLeg);if(st==='RA')clear=true;}
+        // 多角形の広い交差点（新宿）：曲がった先の横断歩道に人がいる間は、待つ位置から出ない（出てから横断歩道の手前で止まると、対向車線の上で止まってしまう）
+        if(clear&&n.poly&&exitXwalkBusy(c))clear=false;
         if(!clear)stopGap=SG(stopGap,wS-v.cu,v,'L172');}}
     // 曲がった先の横断歩道に人がいれば、車体がかかる手前で待つ（第38条）。もうかかっていれば止まらずに抜ける
     if(!amb&&(c.turn!=='S'&&exitXwalkBusy(c)||(!c.node.signal&&exitXwalkYield(c)))){const X=exitXwalk(c);const hit=X?xwalkHitAhead(ds=>poseOfState(stateAhead(v,ds),v.kind,v.decideOnly),v.L,v.W,X,12):null;if(X){if(hit!==null&&hit>0.2)stopGap=SG(stopGap,hit-0.3,v,'L174');}else stopGap=SG(stopGap,rem-v.L/2-0.3,v,'L174');}
