@@ -168,6 +168,8 @@ function netBuild(def){netReset();
       r.Y=r.S.map(s2=>{let i=0;while(i<pr.length-2&&pr[i+1][0]<s2)i++;const a=pr[i],b=pr[i+1];return lerp(a[1],b[1],smooth((s2-a[0])/((b[0]-a[0])||1)));});}
     for(let i=0;i<r.nF;i++)r.lanesF.push(new Lane(r,1,i));for(let i=0;i<r.nB;i++)r.lanesB.push(new Lane(r,-1,i));for(const p of(d.patches||[]))addPatch(r,p);
     for(const L of r.lanesF.concat(r.lanesB))if(d.laneLimit)L.limitV=d.laneLimit/KMH;}
+  // 道路を切ったあと・交差点を作る前の加工（新宿の右折レーン：02g。切ったあとの道路の向きで「右折できる所」を決める）
+  if(typeof def.afterRoads==='function')def.afterRoads(NET);
   // 多角形の交差点（斜めに道路が入る地図）：切ったあとの道路の端から形を作る（02h）
   for(const n of NET.nodes)if(n.kind==='x'&&n.polyAuto)nodePolyBuild(n);
   for(const n of NET.nodes)if(n.kind==='x')nodeSetup(n,def);
