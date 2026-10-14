@@ -1370,8 +1370,9 @@ function netBuild(def){netReset();
   const later=[];
   for(const rd of def.roads){const r=new Road(rd);if(typeof rd.path==='function'){later.push(r);continue;}let pts=pathSamples(rd);
     // 交差点の中心から始まる（終わる）道路：脚の向きを決める
-    if(rd.from){const n=NET.nodeById[rd.from];const a=pts[0],b=pts[1];const L=legOfDir(b.x-a.x,b.z-a.z);r.startNode=n;r.startLeg=L;n.legs[L]={road:r,end:'start'};}
-    if(rd.to){const n=NET.nodeById[rd.to];const a=pts[pts.length-1],b=pts[pts.length-2];const L=legOfDir(b.x-a.x,b.z-a.z);r.endNode=n;r.endLeg=L;n.legs[L]={road:r,end:'end'};}
+    // 脚の方角：地図データで指定があればそれ（斜めに入る道路のある地図）。なければ最初の区間の向きから
+    if(rd.from){const n=NET.nodeById[rd.from];const a=pts[0],b=pts[1];const L=rd.leg0||legOfDir(b.x-a.x,b.z-a.z);r.startNode=n;r.startLeg=L;n.legs[L]={road:r,end:'start'};}
+    if(rd.to){const n=NET.nodeById[rd.to];const a=pts[pts.length-1],b=pts[pts.length-2];const L=rd.leg1||legOfDir(b.x-a.x,b.z-a.z);r.endNode=n;r.endLeg=L;n.legs[L]={road:r,end:'end'};}
     pend.push([r,pts]);}
   // 交差点の大きさ
   for(const n of NET.nodes){if(n.kind!=='x')continue;let hx=0,hz=0;
@@ -1381,6 +1382,7 @@ function netBuild(def){netReset();
   // 道路の端を交差点の縁で切る
   for(const[r,pts]of pend){let a=0,b=0;if(r.startNode&&r.startNode.kind==='x')a=(r.startLeg==='N'||r.startLeg==='S')?r.startNode.hz:r.startNode.hx;
     if(r.endNode&&r.endNode.kind==='x')b=(r.endLeg==='N'||r.endLeg==='S')?r.endNode.hz:r.endNode.hx;
+    if(r.def.cut0!==undefined)a=r.def.cut0;if(r.def.cut1!==undefined)b=r.def.cut1;// 切る長さの指定（多角形の交差点）
     r.sample(pts);if(a||b){const S=r.S;const s0=a,s1=r.len-b;const keep=[];const A=r.at(s0),B=r.at(s1);keep.push({x:A.x,z:A.z});for(let i=0;i<S.length;i++)if(S[i]>s0+0.05&&S[i]<s1-0.05)keep.push({x:r.X[i],z:r.Z[i]});keep.push({x:B.x,z:B.z});r.sample(keep);}
     // 高さ
     const d=r.def;const y0=r.startNode?r.startNode.y||0:(d.y0||0),y1=r.endNode?r.endNode.y||0:(d.y1!==undefined?d.y1:y0);
@@ -1402,6 +1404,8 @@ function netBuild(def){netReset();
       r.Y=r.S.map(s2=>{let i=0;while(i<pr.length-2&&pr[i+1][0]<s2)i++;const a=pr[i],b=pr[i+1];return lerp(a[1],b[1],smooth((s2-a[0])/((b[0]-a[0])||1)));});}
     for(let i=0;i<r.nF;i++)r.lanesF.push(new Lane(r,1,i));for(let i=0;i<r.nB;i++)r.lanesB.push(new Lane(r,-1,i));for(const p of(d.patches||[]))addPatch(r,p);
     for(const L of r.lanesF.concat(r.lanesB))if(d.laneLimit)L.limitV=d.laneLimit/KMH;}
+  // 多角形の交差点（斜めに道路が入る地図）：切ったあとの道路の端から形を作る（02h）
+  for(const n of NET.nodes)if(n.kind==='x'&&n.polyAuto)nodePolyBuild(n);
   for(const n of NET.nodes)if(n.kind==='x')nodeSetup(n,def);
   // 直結（ランプ→加速車線、減速車線→ランプ、道路→道路）
   for(const lk of def.links||[]){const[ra,ka,ia,rb,kb,ib]=lk;const A=findLane(NET.byId[ra],ka,ia),B=findLane(NET.byId[rb],kb,ib);if(A&&B){A.next.push({lane:B});B.prev.push({lane:A});}}
@@ -1415,8 +1419,8 @@ function nodeSetup(n,def){const legs=Object.keys(n.legs);
   const xw=n.xwalkDef!==undefined?n.xwalkDef:(n.signal?true:false);
   for(const L of legs){if(xw===true||(Array.isArray(xw)&&xw.includes(L)))n.xwalk[L]=true;}
   n.xwW=n.xwW||(legs.some(L=>n.legs[L].road.type==='ART')?5:4);
-  // 隅切り
-  for(const sx of[-1,1])for(const sz of[-1,1]){const hL=sx>0?'E':'W',vL=sz>0?'S':'N';
+  // 隅切り（多角形の交差点では形に含めてあるので作らない）
+  if(!n.poly)for(const sx of[-1,1])for(const sz of[-1,1]){const hL=sx>0?'E':'W',vL=sz>0?'S':'N';
     if(n.legs[hL]&&n.legs[vL]){const ta=n.legs[hL].road.type,tb=n.legs[vL].road.type;const both=ta==='RES'&&tb==='RES';const corner=legs.length===2;
       const r=n.filR||(both?(corner?6:4.5):(ta==='ART'||tb==='ART')?9:6);n.fil.push({sx,sz,r,px:n.x+sx*n.hx,pz:n.z+sz*n.hz});}}
   // 接続路
@@ -1426,7 +1430,8 @@ function nodeSetup(n,def){const legs=Object.keys(n.legs);
     for(const l of inLanes){l.inLeg=L;l.node=n;
       for(const L2 of legs){if(L2===L)continue;const e2=n.legs[L2];const r2=e2.road;if(r2.def.pedOnly)continue;// 歩行者用道路には入らない
         const dirOut=e2.end==='start'?1:-1;const outs=r2.lanes(dirOut);if(!outs.length)continue;
-        const turn=turnOf(legHeading[L],outHeading[L2]);let ok;
+        // 曲がる向き：方角の脚どうしから。多角形の交差点では道路の実際の向きから（斜めに入る道路）
+        const turn=n.poly?polyTurn(n,L,L2,l.pos(l.len).h,outs[0].pos(0).h):turnOf(legHeading[L],outHeading[L2]);let ok;
         if(l.arrows)ok=l.arrows.includes(turn);
         else if(l.kind==='turnR')ok=turn==='R';
         else if(turn==='L')ok=l.idx===0;
@@ -1473,7 +1478,10 @@ function connAt(c,s){const P=c.pts;s=clamp(s,0,c.len);let i=1;while(i<P.length-1
 function connProject(c,x,z){const P=c.pts;let best={s:0,d2:Infinity,h:0};for(let i=1;i<P.length;i++){const a=P[i-1],b=P[i];const dx=b.x-a.x,dz=b.z-a.z;const L2=dx*dx+dz*dz||1e-6;
     const t=clamp(((x-a.x)*dx+(z-a.z)*dz)/L2,0,1);const px=a.x+dx*t,pz=a.z+dz*t;const d2=(x-px)*(x-px)+(z-pz)*(z-pz);if(d2<best.d2)best={s:a.s+(b.s-a.s)*t,d2,h:headingOf(dx,dz)};}return best;}
 function inFillet(n,x,z){for(const f of n.fil){const u=(x-f.px)*f.sx,v=(z-f.pz)*f.sz;if(u>=-0.01&&v>=-0.01&&u<=f.r&&v<=f.r&&Math.hypot(u-f.r,v-f.r)>=f.r)return true;}return false;}
-function inNode(n,x,z,m=0.05){return(Math.abs(x-n.x)<=n.hx+m&&Math.abs(z-n.z)<=n.hz+m)||inFillet(n,x,z);}
+function inNode(n,x,z,m=0.05){if(n.poly)return polyHas(n.poly,x,z,m)||nodeConnNear(n,x,z,2.4+m);return(Math.abs(x-n.x)<=n.hx+m&&Math.abs(z-n.z)<=n.hz+m)||inFillet(n,x,z);}
+// 多角形（[[x,z],...]）の中か。m>0 なら縁から m 以内も中とみなす
+function polyHas(P,x,z,m=0){let inside=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const xi=P[i][0],zi=P[i][1],xj=P[j][0],zj=P[j][1];if(((zi>z)!==(zj>z))&&(x<(xj-xi)*(z-zi)/((zj-zi)||1e-9)+xi))inside=!inside;}
+  if(inside||m<=0)return inside;for(let i=0,j=P.length-1;i<P.length;j=i++){const ax=P[j][0],az=P[j][1],bx=P[i][0],bz=P[i][1];const dx=bx-ax,dz=bz-az;const L2=dx*dx+dz*dz||1e-9;const t=clamp(((x-ax)*dx+(z-az)*dz)/L2,0,1);const px=ax+dx*t,pz=az+dz*t;if((x-px)*(x-px)+(z-pz)*(z-pz)<=m*m)return true;}return false;}
 
 // ---------- 空間索引 ----------
 function gkey(ix,iz){return ix*100003+iz;}
@@ -1805,6 +1813,94 @@ function signsDef(C){const nodes=[],roads=[];const z=0;const N=(id,x,zz,o={})=>{
     main(C+'_'+i,name,ids[i],ids[i+1],path,o);}
   return{nodes,roads,links:[]};}
 
+// ===== 02g_map_shinjuku.js : 東京・新宿駅周辺の道路網（実在の地図データから） =====
+// 元データ：OpenStreetMap（道路・線路・緑地。© OpenStreetMap contributors, ODbL）と
+// 国土交通省 Project PLATEAU の 3D都市モデル（建物の形と高さ。新宿区 2025）。tools/shinjuku/ で assets/maps/shinjuku.json に変換してある。
+// 実在の店名・ロゴは使わない（建物の形と高さ、道路の形と名前だけ）。
+// 地図データは大きい（約1MB）ので、起動後に裏で読み込む。確認版（1ファイル）では window.__SHINJUKU_INLINE に埋め込む。
+const SHINJUKU={data:null,state:'idle',url:'assets/maps/shinjuku.json',waiters:[],err:null};
+function shinjukuStart(){if(SHINJUKU.state!=='idle')return;
+  const inl=window.__SHINJUKU_INLINE;if(inl&&inl.roads){SHINJUKU.data=inl;SHINJUKU.state='ready';shinjukuDone();return;}
+  if(location.protocol==='file:'){SHINJUKU.state='off';SHINJUKU.err='file';shinjukuDone();return;}
+  SHINJUKU.state='loading';
+  fetch(SHINJUKU.url).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();})
+    .then(d=>{if(!d||!d.roads)throw new Error('bad data');SHINJUKU.data=d;SHINJUKU.state='ready';shinjukuDone();})
+    .catch(e=>{SHINJUKU.state='off';SHINJUKU.err=e&&e.message;console.warn('shinjuku map: off',SHINJUKU.err);shinjukuDone();});}
+function shinjukuDone(){const w=SHINJUKU.waiters.splice(0);for(const f of w)f(SHINJUKU.state==='ready');}
+// 教習の開始前に呼ぶ：読み込み済みなら true。まだなら読み込んで、終わったら cb(ok)
+function shinjukuEnsure(cb){if(SHINJUKU.state==='ready')return true;if(SHINJUKU.state==='off'){SHINJUKU.state='idle';}SHINJUKU.waiters.push(cb);shinjukuStart();return false;}
+// ---- データ → 道路網の定義（02_net.js の netBuild 用） ----
+function shinjukuDef(){const D=SHINJUKU.data;const nodes=[],roads=[];
+  for(const n of D.nodes){const d={id:n.id,x:n.x,z:n.z,kind:'x',polyAuto:true};if(n.signal)d.signal=Object.assign({g:{NS:20,EW:20}},n.signal);if(n.stop)d.stop=n.stop.slice();nodes.push(d);}
+  for(const r of D.roads){const d={id:r.id,name:r.name||'',type:r.type,nF:r.nF,nB:r.nB,w:r.w,path:r.path,r:25,tier:r.cls,feats:[],limit:r.limit||0};// r：折れ点を半径25mで丸める（折れ目の外側に位置の特定できないすき間ができないように）
+    if(r.med)d.med=r.med;
+    if(r.from){d.from=r.from;d.leg0=r.leg0;d.cut0=r.cut0;}else if(r.portal0){const p=r.path[0];const id='p_'+r.id+'_0';nodes.push({id,x:p[0],z:p[1],kind:'portal'});d.from=id;}
+    if(r.to){d.to=r.to;d.leg1=r.leg1;d.cut1=r.cut1;}else if(r.portal1){const p=r.path[r.path.length-1];const id='p_'+r.id+'_1';nodes.push({id,x:p[0],z:p[1],kind:'portal'});d.to=id;}
+    if(r.elev){d.prof=[[Math.max(8,r.elev[0]-(r.cut0||0)),r.elev[1]]];d.ySmooth=30;}// 高架（s は切ったあとの道路の始点から）
+    if(r.type==='RES')d.center='none';
+    roads.push(d);}
+  // 大通りの交差点：横断歩道（信号のない所でも大通りの側には横断歩道）
+  const byId={};for(const n of nodes)byId[n.id]=n;const legArt={};
+  for(const r of roads){for(const[k,leg]of[[r.from,r.leg0],[r.to,r.leg1]]){if(!k||!leg)continue;(legArt[k]=legArt[k]||{})[leg]=r.type;}}
+  for(const n of nodes){if(n.kind!=='x')continue;const L=legArt[n.id]||{};const arts=Object.keys(L).filter(k=>L[k]==='ART');if(n.signal)n.xwalk=true;else if(arts.length>=2)n.xwalk=arts;}
+  return{nodes,roads,links:[]};}
+
+// ===== 02h_netpoly.js : 多角形の交差点（斜めに道路が入る地図：新宿など） =====
+// 今までの交差点は、N/E/S/W の脚が直角に入る長方形（02_net.js の hx/hz と隅切り）。
+// 実在の町では道路が斜めに入るので、交差点の形を「切ったあとの道路の端」をつないだ多角形として作る。
+// 脚の方角（N/E/S/W）は地図データ（tools/shinjuku/build_map.py）が決め、曲がる向きは道路の実際の向きから出す（02_net.js nodeSetup）。
+// 既存の地図（みなみ町・さくら区など）はこのファイルを使わない（def の node に polyAuto がない）。
+function nodePolyBuild(n){const legs=[];
+  for(const L in n.legs){const e=n.legs[L];const r=e.road;const atStart=e.end==='start';const s=atStart?0:r.len;const P=r.at(s);
+    const hOut=atStart?P.h:wrapA(P.h+Math.PI);// 交差点から外へ向かう向き
+    const[lo,hi]=r.tRange(s);const wLo=r.walk[0]||0,wHi=r.walk[1]||0;
+    const at=(t)=>({x:P.x+P.rx*t,z:P.z+P.rz*t});
+    const c1=at(lo),c2=at(hi),o1=at(lo-wLo),o2=at(hi+wHi);
+    const ang=Math.atan2(P.z-n.z,P.x-n.x);const rel=(q)=>wrapA(Math.atan2(q.z-n.z,q.x-n.x)-ang);
+    // 交差点のまわりを角度順に回ったとき、先に来る角を first に
+    const sw=rel(c1)>rel(c2);
+    legs.push({L,r,hOut,P,first:sw?c2:c1,second:sw?c1:c2,firstO:sw?o2:o1,secondO:sw?o1:o2,wFirst:sw?wHi:wLo,wSecond:sw?wLo:wHi,ang});}
+  legs.sort((a,b)=>a.ang-b.ang);
+  const poly=[],corners=[];const f=(g)=>fwd(g.hOut);
+  // 2直線の交点：p+f1*t = q+f2*u
+  const meet=(p,f1,q,f2)=>{const den=f1.x*f2.z-f1.z*f2.x;if(Math.abs(den)<0.08)return null;const dx=q.x-p.x,dz=q.z-p.z;const t=(dx*f2.z-dz*f2.x)/den,u=(dx*f1.z-dz*f1.x)/den;return{x:p.x+f1.x*t,z:p.z+f1.z*t,t,u};};
+  for(let i=0;i<legs.length;i++){const g=legs[i],h=legs[(i+1)%legs.length];
+    poly.push([g.first.x,g.first.z],[g.second.x,g.second.z]);
+    if(legs.length===1)continue;
+    // g の second の角 → h の first の角：縁石の線の交点を制御点にして丸める（隅切り）
+    let X=meet(g.second,f(g),h.first,f(h));const arc=[];
+    if(X&&X.t<=0.3&&X.u<=0.3&&Math.hypot(X.x-g.second.x,X.z-g.second.z)<60&&Math.hypot(X.x-h.first.x,X.z-h.first.z)<60){
+      // 丸みの深さ（弦からのふくらみ）は 3.5m まで：鈍角の角では縁石の線の交点が交差点の奥になるため
+      const mx=(g.second.x+h.first.x)/2,mz=(g.second.z+h.first.z)/2;const vx=X.x-mx,vz=X.z-mz;const L=Math.hypot(vx,vz);if(L/2>3.5)X={x:mx+vx*7/L,z:mz+vz*7/L};
+      for(let k=1;k<6;k++){const t=k/6,u=1-t;arc.push({x:u*u*g.second.x+2*u*t*X.x+t*t*h.first.x,z:u*u*g.second.z+2*u*t*X.z+t*t*h.first.z});}}
+    for(const q of arc)poly.push([q.x,q.z]);
+    // 歩道の角：縁石の線（second→arc→first）と、外側の線をつなぐ
+    const walk=Math.max(g.wSecond,h.wFirst);if(walk>0.05){const Xo=meet(g.secondO,f(g),h.firstO,f(h));const outer=(Xo&&Xo.t<=0.3&&Xo.u<=0.3&&Math.hypot(Xo.x-g.secondO.x,Xo.z-g.secondO.z)<80)?[[Xo.x,Xo.z]]:[];
+      const pts=[[g.second.x,g.second.z],...arc.map(q=>[q.x,q.z]),[h.first.x,h.first.z],[h.firstO.x,h.firstO.z],...outer,[g.secondO.x,g.secondO.z]];
+      corners.push({pts,curb:[g.second,...arc,h.first]});}}
+  n.poly=poly;n.corners=corners;
+  let hx=3,hz=3;for(const[x,z]of poly){hx=Math.max(hx,Math.abs(x-n.x));hz=Math.max(hz,Math.abs(z-n.z));}n.hx=hx;n.hz=hz;n.fil=[];}
+// 路面と歩道の角（03a の buildNodeMesh から）
+function buildNodePolyMesh(B,n){const y=n.y||0;const legs=Object.keys(n.legs);const anyRes=legs.every(L=>n.legs[L].road.type==='RES');const col=anyRes?COL.asphRES:COL.asph;
+  B.poly('road',n.poly,y,col,8);
+  for(const c of n.corners){B.poly('walk',c.pts,y+0.15,0xffffff,4);
+    // 縁石：交差点側に面を向ける
+    const pts=c.curb.map(q=>({x:q.x,y,z:q.z}));const a=pts[0],b=pts[pts.length-1];const cr=(b.x-a.x)*(n.z-a.z)-(b.z-a.z)*(n.x-a.x);B.wall('def',pts,0.15,COL.curb,cr>0?1:-1);}}
+// 多角形の交差点での曲がる向き：脚の方角どうし（地図データが決めた交差点の構造）を基本に、道路の実際の向きで補う
+// ・脚が2本（道路の折れ点）は直進　・向きの差が20度未満は直進　・脚の上では直進で、向きの差が55度未満なら直進（道路が交差点で曲がっている）
+function polyTurn(n,L,L2,hIn,hOut){const d=Math.abs(wrapA(hOut-hIn));if(Object.keys(n.legs).length<=2)return d>2.6?'U':'S';if(d<0.35)return'S';
+  const tl=(L&&L2)?turnOf(legHeading[L],outHeading[L2]):null;if(tl==='S'&&d<0.95)return'S';return turnOf(hIn,hOut);}
+// 交差点の接続路（右左折の線）のそば：多角形からはみ出す接続路（鋭角・ずれた道路）も走れる所とみなす
+function nodeConnNear(n,x,z,m){if(!n._cp){const cp=[];for(const L in n.legs){const e=n.legs[L];const r=e.road;for(const l of r.allLanes(e.end==='end'?1:-1))for(const c of l.conns)if(c.node===n)cp.push(c.pts);}n._cp=cp;}
+  const mm=m*m;for(const P of n._cp){for(let i=1;i<P.length;i++){const a=P[i-1],b=P[i];const dx=b.x-a.x,dz=b.z-a.z;const L2=dx*dx+dz*dz||1e-9;const t=clamp(((x-a.x)*dx+(z-a.z)*dz)/L2,0,1);const px=a.x+dx*t,pz=a.z+dz*t;if((x-px)*(x-px)+(z-pz)*(z-pz)<=mm)return true;}}return false;}
+// 脚 Lin から入って脚 Lout へ出るときの曲がる向き（ナビ・自動運転用）。多角形の交差点では道路の実際の向きで（polyTurn）
+function legTurn(n,Lin,Lout){if(!n.poly)return turnOf(legHeading[Lin],outHeading[Lout]);const a=n.legs[Lin],b=n.legs[Lout];if(!a||!b)return turnOf(legHeading[Lin],outHeading[Lout]);
+  const ra=a.road,rb=b.road;const Pa=ra.at(a.end==='end'?ra.len:0);const hIn=a.end==='end'?Pa.h:wrapA(Pa.h+Math.PI);const Pb=rb.at(b.end==='start'?0:rb.len);const hOut=b.end==='start'?Pb.h:wrapA(Pb.h+Math.PI);
+  return polyTurn(n,Lin,Lout,hIn,hOut);}
+// 多角形の縁まで、点 (x,z) から向き h に進んだ距離（信号の位置などに）
+function polyRayDist(P,x,z,h){const f=fwd(h);let best=0;for(let i=0,j=P.length-1;i<P.length;j=i++){const ax=P[j][0],az=P[j][1],bx=P[i][0],bz=P[i][1];const dx=bx-ax,dz=bz-az;const den=f.x*dz-f.z*dx;if(Math.abs(den)<1e-9)continue;
+    const t=((ax-x)*dz-(az-z)*dx)/den,u=((ax-x)*f.z-(az-z)*f.x)/den;if(t>0&&u>=0&&u<=1&&t>best)best=t;}return best||3;}
+
 // ===== 03a_roadmesh.js : 路面・路肩・中央分離帯・歩道・区画線・交差点 =====
 let scene;const MAT={},TEX={};
 const COL={asph:0x6c7076,asphRES:0x7c8085,asphEXP:0x5f6368,side:0xd9d4ca,curb:0xd5d2c8,white:0xf2f2ee,yellow:0xf0b416,blue:0x2a6fd6,grass:0x7f9a5a,dirt:0x9c8b6c,
@@ -1966,7 +2062,8 @@ function arrowMark(B,r,s,t,dir,set){const P=r.pt(s,t);const h=dir>0?P.h:wrapA(P.
 function textMark(B,r,s,t,dir,cell,w,l){const P=r.pt(s,t);const h=dir>0?P.h:wrapA(P.h+Math.PI);DECALS.push({x:P.x,y:P.y+0.03,z:P.z,h,w,l,cell});}
 const DECALS=[];
 // ---- 交差点の路面と歩道の角 ----
-function buildNodeMesh(B,n){const y=n.y||0;const legs=Object.keys(n.legs);const anyRes=legs.every(L=>n.legs[L].road.type==='RES');const col=anyRes?COL.asphRES:COL.asph;
+function buildNodeMesh(B,n){if(n.poly){buildNodePolyMesh(B,n);return;}// 多角形の交差点（02h）
+  const y=n.y||0;const legs=Object.keys(n.legs);const anyRes=legs.every(L=>n.legs[L].road.type==='RES');const col=anyRes?COL.asphRES:COL.asph;
   B.poly('road',[[n.x-n.hx,n.z-n.hz],[n.x+n.hx,n.z-n.hz],[n.x+n.hx,n.z+n.hz],[n.x-n.hx,n.z+n.hz]],y,col,8);
   for(const f of n.fil){const pts=[];for(let i=0;i<=10;i++){const a=Math.PI+i/10*Math.PI/2;pts.push([f.px+f.sx*(f.r+f.r*Math.cos(a)),f.pz+f.sz*(f.r+f.r*Math.sin(a))]);}
     pts.push([f.px,f.pz]);B.poly('road',pts,y,col,8);}
@@ -2139,8 +2236,8 @@ function buildGuardPipes(B,opt={}){for(const r of NET.roads){if(!(r.walk[0]||r.w
     for(const side of[-1,1]){const w=r.walk[side<0?0:1];if(!w)continue;const brk=r.feats.filter(f=>f.type==='xwalk'&&f.s!==undefined).map(f=>f.s);
       const s0=r.startNode&&r.startNode.kind==='x'?(r.startNode.xwalk[r.startLeg]?7:3):3,s1=r.len-(r.endNode&&r.endNode.kind==='x'?(r.endNode.xwalk[r.endLeg]?7:3):3);
       const tAt=(s)=>{const[lo,hi]=r.tRange(s);return side<0?lo-0.3:hi+0.3;};
-      for(let s=s0;s<s1;s+=3){if(brk.some(b=>Math.abs(s-b)<4))continue;if(opt.skip&&opt.skip(r,s,side))continue;const P=r.pt(s,tAt(s));B.box('def',P.x,P.y+0.55+0.15,P.z,0.07,0.8,0.07,0xf2f2f2);}
-      let a=s0;const ends=[...brk.map(b=>[b-4,b+4]),[s1,1e9]];for(const[b0,b1]of ends){if(b0>a+1){for(const yy of[0.77,1.05]){const pts=simplifyPts(roadEdgePts(r,a,Math.min(b0,s1),tAt,yy,4));for(let i=0;i<pts.length-1;i++)B.bar('def',pts[i].x,pts[i].y,pts[i].z,pts[i+1].x,pts[i+1].y,pts[i+1].z,0.05,0.05,0xf2f2f2);}}a=b1;}}}}
+      for(let s=s0;s<s1;s+=(opt.step||3)){if(brk.some(b=>Math.abs(s-b)<4))continue;if(opt.skip&&opt.skip(r,s,side))continue;const P=r.pt(s,tAt(s));B.box('def',P.x,P.y+0.55+0.15,P.z,0.07,0.8,0.07,0xf2f2f2);}
+      let a=s0;const ends=[...brk.map(b=>[b-4,b+4]),[s1,1e9]];for(const[b0,b1]of ends){if(b0>a+1){for(const yy of[0.77,1.05]){const pts=simplifyPts(roadEdgePts(r,a,Math.min(b0,s1),tAt,yy,4),opt.tol);for(let i=0;i<pts.length-1;i++)B.bar('def',pts[i].x,pts[i].y,pts[i].z,pts[i+1].x,pts[i+1].y,pts[i+1].z,0.05,0.05,0xf2f2f2);}}a=b1;}}}}
 // 一直線に並んだ点をまとめる（棒の数を減らす）
 function simplifyPts(pts,tol=0.004){if(pts.length<3)return pts;const out=[pts[0]];for(let i=1;i<pts.length-1;i++){const a=out[out.length-1],b=pts[i],c=pts[i+1];const h1=Math.atan2(b.x-a.x,b.z-a.z),h2=Math.atan2(c.x-b.x,c.z-b.z);if(Math.abs(wrapA(h2-h1))>tol||Math.abs(c.y-b.y-(b.y-a.y))>0.02)out.push(b);}out.push(pts[pts.length-1]);return out;}
 // 街路樹
@@ -2699,6 +2796,75 @@ function buildPark(B,wires){const K=PARK.K;R=rng(515);
     B.quad('glow',250,1.35,zf+0.03,9,2.3,0,0,0,1,1,0xf3e6c8);TEXTSIGNS.push({x:250,y:3.9,z:zf+0.04,h:Math.PI,w:6,hh:1.1,lit:true,spec:{bg:'#7a4a2a',fg:'#fff4dc',bw:0,lines:[{t:'さくらベーカリー',size:0.5,y:0.52,color:'#fff4dc'}]}});}
   B.ground('grass',-700,-500,700,500,-0.06,0x7f9a5a,10);}
 
+// ===== 03g_shinjuku.js : 新宿駅周辺の町並み（PLATEAU の建物の押し出し・地面・線路・緑地・遠景） =====
+// 建物は PLATEAU の底面の形（多角形）を高さぶん押し出す。壁の見た目（窓の並び）は用途と高さで決める。実在の名前・ロゴは使わない。
+const SJ={palette:null};
+// 多角形の建物：壁（窓テクスチャ）と屋根
+function polyBuilding(B,key,poly,y0,h,color,uvW,uvH){
+  // 向き：wallBox と同じ（面積が負の向き）にそろえる
+  let area=0;for(let i=0;i<poly.length;i++){const a=poly[i],b=poly[(i+1)%poly.length];area+=a[0]*b[1]-b[0]*a[1];}
+  const P=area>0?poly.slice().reverse():poly;const n=P.length;let cx=0,cz=0;for(const p of P){cx+=p[0];cz+=p[1];}cx/=n;cz/=n;
+  const o=B._grp(key,cx,cz);const c=C(color);
+  for(let i=0;i<n;i++){const a=P[i],b=P[(i+1)%n];const dx=b[0]-a[0],dz=b[1]-a[1];const len=Math.hypot(dx,dz);if(len<0.05)continue;const nx=-dz/len,nz=dx/len;
+    const uu=Math.max(1,Math.round(len/uvW)),vv=Math.max(1,Math.round(h/uvH));
+    const q=[[a,y0,0,0],[b,y0,uu,0],[b,y0+h,uu,vv],[a,y0,0,0],[b,y0+h,uu,vv],[a,y0+h,0,vv]];
+    for(const[p,yy,u,v]of q)B._v(o,p[0],yy,p[1],nx,0,nz,c,u,v);}
+  // 屋根（v=9：壁の足もとを暗くする処理（07c）の対象外）
+  const v2=P.map(p=>new THREE.Vector2(p[0],p[1]));let tris;try{tris=THREE.ShapeUtils.triangulateShape(v2,[]);}catch(e){tris=[];}
+  const rc=C(0x8d8a85);for(const t of tris){const T=t.map(i=>P[i]);const cr=(T[1][0]-T[0][0])*(T[2][1]-T[0][1])-(T[1][1]-T[0][1])*(T[2][0]-T[0][0]);const Q=cr>0?[T[0],T[2],T[1]]:T;
+    for(const p of Q)B._v(o,p[0],y0+h,p[1],0,1,0,rc,0,9);}
+  return{cx,cz};}
+// 用途コード（PLATEAU）と高さから、壁の種類と色を決める
+function sjStyle(b,R2){const u=b.u||'';const h=b.h;const P=PAL;
+  if(h>=60)return{key:'fac2',col:pick(P.tower,R2),uvW:8,uvH:3.6,kind:'tower'};
+  if(u==='401'||u==='403'||u==='421')return h>=16?{key:'fac0',col:pick(P.office,R2),uvW:7,uvH:3.4,kind:'office'}:{key:'fac3',col:pick(P.shop,R2),uvW:8,uvH:3.4,kind:'shop'};
+  if(u==='402'||u==='413'||u==='414'||u==='404')return h>=30?{key:'fac0',col:pick(P.office,R2),uvW:7,uvH:3.4,kind:'office'}:{key:'fac3',col:pick([0xd9d2c6,0xc9c2b4,0xe2ddd2,0xbcb5aa,0xe7e3d8],R2),uvW:8.5,uvH:3.3,kind:'zakkyo'};
+  if(u==='412')return{key:'fac1',col:pick(P.apt,R2),uvW:6.4,uvH:3.0,kind:'apt'};
+  if(u==='411'||u==='415')return h<10?{key:'house',col:pick(P.house,R2),uvW:3.4,uvH:2.9,kind:'house'}:{key:'fac1',col:pick(P.apt,R2),uvW:6.4,uvH:3.0,kind:'apt'};
+  if(u==='422')return{key:'fac1',col:pick([0xe8e4dc,0xdde3e6,0xe2e2de],R2),uvW:6.4,uvH:3.4,kind:'school'};
+  if(u==='431'||u==='441'||u==='452'||u==='454')return{key:'def',col:pick([0xb9b6ae,0xc9c6bf,0xa9a69e],R2),uvW:6,uvH:3,kind:'plain'};
+  // 不明・その他：高さで
+  if(h<9)return{key:'house',col:pick(P.house,R2),uvW:3.4,uvH:2.9,kind:'house'};
+  if(h<20)return{key:'fac3',col:pick(P.shop,R2),uvW:8,uvH:3.3,kind:'shop'};
+  return{key:'fac0',col:pick(P.office,R2),uvW:7,uvH:3.4,kind:'office'};}
+function sjBuildings(B){const D=SHINJUKU.data;const R2=rng(7);let n=0;
+  for(const b of D.buildings){const poly=b.p;if(poly.length<3)continue;const h=Math.max(2.6,b.h);const st=sjStyle(b,R2);
+    const{cx,cz}=polyBuilding(B,st.key,poly,0,h,st.col,st.uvW,st.uvH);n++;
+    // 大きさ（外接する四角）
+    let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(const p of poly){x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);z0=Math.min(z0,p[1]);z1=Math.max(z1,p[1]);}const ex=x1-x0,ez=z1-z0;
+    if(st.kind==='house'){// 小さい家：屋根
+      if(poly.length===4&&ex<16&&ez<16){const a=poly[0],bq=poly[1];const ry=Math.atan2(bq[1]-a[1],bq[0]-a[0]);const w=Math.hypot(bq[0]-a[0],bq[1]-a[1]),d=Math.hypot(poly[2][0]-bq[0],poly[2][1]-bq[1]);
+        if(w>3&&d>3)(R2()<0.6?roofGable:roofHip)(B,cx,cz,h,w,d,1.6,-ry,pick(PAL.roof,R2));}}
+    else if(st.kind!=='plain'){B.box('def',cx,h+0.25,cz,Math.max(1,ex*0.35),0.5,Math.max(1,ez*0.35),0x8f8b85);
+      if(h>=18&&ex>12&&ez>12&&R2()<0.5&&ENV.q!=='low')roofStuff(B,cx,cz,h+0.5,ex*0.5,ez*0.5);
+      if(st.kind==='tower'&&ex>14&&ez>14){B.box('def',cx,h+2.5,cz,ex*0.35,5,ez*0.35,0x8a929a);B.cyl('def',cx,h+9,cz,0.25,8,0xcfcfcf,6);}}}
+  return n;}
+// 地面・緑地・線路・遠景
+function sjGround(B){const H=SHINJUKU.data.half||880;B.ground('conc',-H-40,-H-40,H+40,H+40,-0.05,0xc9c6bf,9);
+  for(const g of SHINJUKU.data.green){B.poly('grass',g.p,0.02,0x7f9a5a,8);
+    // 木をまばらに
+    let x0=1e9,x1=-1e9,z0=1e9,z1=-1e9;for(const p of g.p){x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);z0=Math.min(z0,p[1]);z1=Math.max(z1,p[1]);}
+    const area=Math.abs(polyArea(g.p));const n=Math.min(140,Math.floor(area/900));const r2=rng(Math.floor(x0+z0));
+    for(let i=0;i<n;i++){const x=x0+r2()*(x1-x0),z=z0+r2()*(z1-z0);if(polyHas(g.p,x,z,-1)&&!nearRoad(x,z,9))tree(B,x,z,0.9+r2()*0.7,0.02);}}}
+function polyArea(P){let s=0;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];s+=a[0]*b[1]-b[0]*a[1];}return s/2;}
+function nearRoad(x,z,m){const q=locate(x,z);return!!(q&&(q.kind==='node'||q.band!=='off'||(q.kind==='road'&&Math.abs(q.t)<m)));}
+// 線路：北は高架、駅の南は掘割（甲州街道の橋の下）。y は z で決める
+function sjRailY(z){if(z<-320)return 7.0;if(z<-120)return 7.0-(z+320)/200*4.5;if(z<120)return 2.5-(z+120)/240*7.0;if(z<420)return -4.5+(z-120)/300*4.5;return 0;}
+function sjRails(B){const D=SHINJUKU.data;const seen=new Set();
+  for(const rl of D.rails){const pts=rl.pts;if(pts.length<2)continue;
+    for(let i=0;i<pts.length-1;i++){const a=pts[i],b=pts[i+1];const L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L<0.5)continue;const n=Math.max(1,Math.ceil(L/20));
+      for(let k=0;k<n;k++){const x0=a[0]+(b[0]-a[0])*k/n,z0=a[1]+(b[1]-a[1])*k/n,x1=a[0]+(b[0]-a[0])*(k+1)/n,z1=a[1]+(b[1]-a[1])*(k+1)/n;const key=Math.round((x0+x1)/4)+','+Math.round((z0+z1)/4);if(seen.has(key))continue;seen.add(key);
+        const y0=sjRailY(z0),y1=sjRailY(z1);const cx=(x0+x1)/2,cz=(z0+z1)/2,cy=(y0+y1)/2;const h=Math.atan2(x1-x0,-(z1-z0));const seg=Math.hypot(x1-x0,z1-z0);
+        B.boxR('def',cx,cy+0.05,cz,2.8,0.1,seg+0.3,COL.ballast,0,-h,0);for(const o of[-0.535,0.535]){const rt=rightV(h);B.boxR('def',cx+rt.x*o,cy+0.18,cz+rt.z*o,0.08,0.12,seg+0.3,COL.rail,0,-h,0);}
+        if(cy>2.5){B.boxR('conc',cx,cy-0.6,cz,4.0,1.2,seg+0.3,0xbfbcb4,0,-h,0);if(k%2===0)B.box('conc',cx,(cy-1.2)/2,cz,1.1,cy-1.2,1.1,0xc6c3bb);}
+        else if(cy<-0.5){const rt=rightV(h);for(const sd of[-1,1])B.boxR('conc',cx+rt.x*sd*2.6,cy/2,cz+rt.z*sd*2.6,0.4,-cy+0.3,seg+0.3,0xb9b6ae,0,-h,0);}}}}}
+function sjSkyline(B){const R3=rng(2027);for(let i=0;i<170;i++){const a=R3()*Math.PI*2;const d=1000+R3()*800;const x=Math.cos(a)*d,z=Math.sin(a)*d;
+    const w=24+R3()*45,dd=24+R3()*45,h=25+Math.pow(R3(),1.8)*170;B.wallBox(R3()<0.4?'fac2':R3()<0.6?'fac0':'fac1',x,z,0,w,h,dd,pick([0x8fa3b2,0x9aa8b2,0xa7b1b8,0x7f90a0,0xb5bcc2,0xc4ccd2],R3),R3()*Math.PI,8,7.2);}}
+function buildShinjuku(B,wires){const low=ENV.q==='low';
+  buildSignMeshes(B);buildStreetLights(B,{filter:r=>r.type!=='RES'});if(!low)buildGuardPipes(B,{filter:r=>r.type==='ART',step:6,tol:0.03});buildPoles(B,wires,{filter:r=>r.type!=='ART'});
+  buildStreetTrees(B,{filter:r=>r.type==='ART',step:low?44:26});// 街路樹は控えめに（描画量。品質「低」ではさらに少なく）
+  sjGround(B);sjRails(B);const n=sjBuildings(B);SJ.built=n;}
+
 // ===== 04_models.js : 車・歩行者・自転車・電車のモデル =====
 // 部品をまとめて1つのジオメトリにする（頂点カラー）
 function mergeParts(parts){const p=[],n=[],c=[],ex=[];const v=new V3(),m=new THREE.Matrix4(),nm=new THREE.Matrix3();let hasEx=false;
@@ -2900,7 +3066,11 @@ class Signal{
   build(){const n=this.n,y=n.y||0;const SB=this.SB;this.headPos=[];
     for(const L in n.legs){const e=n.legs[L];const r=e.road;const dirIn=e.end==='end'?1:-1;if(dirIn>0?!r.nF:!r.nB)continue;// 流入がない脚（一方通行の出口）
       if(r.def.pedOnly)continue;// 歩行者用道路から入る車はない
-      const h=legHeading[L];const f=fwd(h),rt=rightV(h);const along=(L==='N'||L==='S')?n.hz:n.hx;const cross=(L==='N'||L==='S')?n.hx:n.hz;
+      let h=legHeading[L];let along=(L==='N'||L==='S')?n.hz:n.hx;let cross=(L==='N'||L==='S')?n.hx:n.hz;
+      if(n.poly){// 多角形の交差点（斜めに入る道路）：その道路の実際の向きと幅で置く
+        const P=r.at(e.end==='end'?r.len:0);h=e.end==='end'?P.h:wrapA(P.h+Math.PI);const[lo,hi]=r.tRange(e.end==='end'?r.len:0);cross=Math.max(Math.abs(lo),Math.abs(hi));
+        along=polyRayDist(n.poly,n.x,n.z,h);}
+      const f=fwd(h),rt=rightV(h);
       const far=along+(n.xwalk[OPP[L]]?n.xwW+1.6:1.6);const nL=r.lanes(dirIn).length+(r.patches.some(p=>p.kind==='turnR'&&p.dir===dirIn)?1:0);
       const mk=(sideSign,lat)=>{const px=n.x+f.x*far+rt.x*sideSign*(cross+1.1),pz=n.z+f.z*far+rt.z*sideSign*(cross+1.1);const hx=n.x+f.x*far+rt.x*lat,hz=n.z+f.z*far+rt.z*lat;
         SB.cyl('def',px,y+3.1,pz,0.13,6.2,0x8f949a,8);SB.bar('def',px,y+5.75,pz,hx,y+5.75,hz,0.11,0.11,0x8f949a);
@@ -3376,6 +3546,8 @@ function crosswalkBusy(n,L){const X=XWALKS.find(x=>x.node===n&&x.L===L);if(!X)re
 function midXwalkBusy(f,v){const X=XWALKS.find(x=>x.mid&&x.f===f);if(!X)return false;return X.peds.some(p=>p.mode==='xcross'||(p.mode==='xwait'&&p.waitT>0.6));}
 function vehiclesApproachingMid(X,dist){const r=X.r;for(const o of VEH){if(o.hidden||o.conn||!o.lane||o.lane.road!==r)continue;const d=(X.s-o.lane.sOf(o.u))*o.lane.dir;if(d>0&&d<dist&&o.v>1.2)return true;}
   const p=PLAYER;if(p&&STAGE.running&&p.loc&&p.loc.kind==='road'&&p.loc.road===r){const al=Math.cos(wrapA(p.h-r.at(p.loc.s).h));const dir=al>0?1:-1;const d=(X.s-p.loc.s)*dir;if(d>0&&d<dist&&p.v>1.2)return true;}return false;}
+// 多角形の大きな交差点：交差点の中心ではなく、その横断歩道のそばに動いている車がいないか
+function vehiclesNearXwalk(X,d){const cx=(X.a.x+X.b.x)/2,cz=(X.a.z+X.b.z)/2;for(const o of VEH)if(!o.hidden&&Math.hypot(o.x-cx,o.z-cz)<d&&o.v>1)return true;const p=PLAYER;return!!(p&&STAGE.running&&Math.hypot(p.x-cx,p.z-cz)<d&&p.v>1);}
 function vehiclesNearNode(n,d){for(const o of VEH)if(!o.hidden&&Math.hypot(o.x-n.x,o.z-n.z)<d&&o.v>1)return true;const p=PLAYER;return!!(p&&STAGE.running&&Math.hypot(p.x-n.x,p.z-n.z)<d&&p.v>1);}
 // ---- 歩道を歩く人 ----
 function buildWalkPaths(){WALKS.length=0;for(const r of NET.roads){if(r.len<24||r.type==='EXP'||r.type==='RAMP')continue;
@@ -3398,7 +3570,7 @@ function updatePeds(dt){
       p.blockT=0;if(p.wOff>0){const back=Math.max(0,p.wOff-dt*0.45);const Q=w.r.pt(ws,w.t(ws)+back*(w.inward||0));if(!pedBlocked(Q.x,Q.z,p.R+0.6))p.wOff=back;}
       p.ws=ws;const dx=P.x-p.x,dz=P.z-p.z;if(Math.hypot(dx,dz)>0.01)p.h=headingOf(dx,dz);p.x=P.x;p.z=P.z;p.y=P.y+(w.res?0:0.15);p.v=p.spd*0.85;}
     else if(p.mode==='xwait'){p.v=0;p.waitT+=dt;const X=p.X;let go=false;
-      if(X.mid)go=!vehiclesApproachingMid(X,40)&&p.waitT>1.2;else if(X.diag)go=X.sig.pedFor('N')==='G'&&X.sig.scrambleNow();else{const s=X.sig?X.sig.pedFor(X.L):'OFF';go=s==='G'||(s==='OFF'&&p.waitT>3&&!vehiclesNearNode(X.node,25));}
+      if(X.mid)go=!vehiclesApproachingMid(X,40)&&p.waitT>1.2;else if(X.diag)go=X.sig.pedFor('N')==='G'&&X.sig.scrambleNow();else{const s=X.sig?X.sig.pedFor(X.L):'OFF';go=s==='G'||(s==='OFF'&&p.waitT>3&&!(X.node.poly?vehiclesNearXwalk(X,20):vehiclesNearNode(X.node,25)));}
       if(go)p.mode='xcross';const t=p.from===0?X.b:X.a;p.h=headingOf(t.x-p.x,t.z-p.z);}
     else if(p.mode==='xcross'){const X=p.X;const t=p.from===0?X.b:X.a;const hurry=!X.mid&&X.sig&&X.sig.pedFor(X.diag?'N':X.L)!=='G'?1.45:1;
       {const dx=t.x-p.x,dz=t.z-p.z,d=Math.hypot(dx,dz)||1;const bk=pedBlocked(p.x+dx/d*0.35,p.z+dz/d*0.35,p.R+0.15,p.x,p.z);
@@ -3422,7 +3594,7 @@ function pedBlocked(x,z,rad,x0,z0){const near=(o)=>{const d1=distToOBB(o,x,z);if
 function spawnCrosser(X,from,kind){let p=PEDS.find(q=>q.mode==='off'&&q.kind===kind&&!q.reserved);if(!p){if(PEDS.length>=PEDCAP)return null;p=new Ped(kind);PEDS.push(p);}
   const s=from===0?X.a:X.b;const off=(R()-0.5)*1.4;const dx=X.b.x-X.a.x,dz=X.b.z-X.a.z,L=Math.hypot(dx,dz)||1;p.set(s.x+(-dz/L)*off,s.z+(dx/L)*off);p.y=(X.node?X.node.y:X.r?X.r.yAt(X.s):0)+0.15;
   p.X=X;p.from=from;p.mode='xwait';p.waitT=0;p.onWalk=false;p.show(true);X.peds.push(p);return p;}
-function clearPeds(){for(const p of PEDS){p.show(false);p.reserved=false;}PEDS.length=0;for(const X of XWALKS)X.peds=[];}
+function clearPeds(){for(const p of PEDS){p.show(false);p.reserved=false;}PEDS.length=0;for(const X of XWALKS)X.peds=[];pedSpawnT=0;pedRecT=0;}// 横断者を出す間隔の残りは教習ごとに最初から（原簿を見ていた時間で変わらないように）
 
 
 // ===== 07_player.js : 自車の物理と操作 =====
@@ -3727,7 +3899,8 @@ function judgeUpdate(dt){const p=PLAYER;if(!p||STAGE.over)return;J.t+=dt;const f
   // 交差点の中
   if(q&&q.kind==='node'){const n=q.node;
     if(!J.N||J.N.n!==n){const A=J.A;const fromLeg=A&&A.n===n?A.L:null;const el=A&&A.n===n?(A.laneAtLine||A.lane):null;
-      J.N={n,L:fromLeg,h0:fromLeg?legHeading[fromLeg]:p.h,blink:A&&A.n===n?{side:A.blinkSide,dist:A.blinkDist,d0:A.d0}:{side:p.blink,dist:0},entryGap:J.lastLeftGap!==undefined?J.lastLeftGap:0,entryRoad:A?A.road:null,entryDir:A?A.dir:0,
+      let h0=fromLeg?legHeading[fromLeg]:p.h;if(n.poly&&A&&A.n===n&&A.road){const rr=A.road;const P0=rr.at(A.dir>0?rr.len:0);h0=A.dir>0?P0.h:wrapA(P0.h+Math.PI);}// 多角形の交差点：道路の実際の向き（斜めに入る）
+      J.N={n,L:fromLeg,h0,blink:A&&A.n===n?{side:A.blinkSide,dist:A.blinkDist,d0:A.d0}:{side:p.blink,dist:0},entryGap:J.lastLeftGap!==undefined?J.lastLeftGap:0,entryRoad:A?A.road:null,entryDir:A?A.dir:0,
         entryLane:el,maxV:0,prog45:null,lineSt:A?A.lineSt:null,v0:p.v,stopT:0};blindCheck(n,J.N,p);}
     const N=J.N;N.maxV=Math.max(N.maxV,Math.abs(p.v));const dh=wrapA(p.h-N.h0);
     if(N.prog45===null&&dh>Math.PI/4){const ef=fwd(N.h0);N.prog45=(p.x-n.x)*ef.x+(p.z-n.z)*ef.z;}
@@ -3744,7 +3917,9 @@ function obstacleAheadLeft(p,dist){const f=fwd(p.h),r=rightV(p.h);for(const o of
   return!!(AMB&&AMB.active&&Math.hypot(AMB.x-p.x,AMB.z-p.z)<60);}
 function blindCheck(n,N,p){if(n.signal||n.fil.length===0)return;const legs=Object.keys(n.legs);if(legs.length<3)return;
   const res=legs.every(L=>n.legs[L].road.type==='RES');if(!res||!N.L)return;if(n.stopLegs.includes(N.L))return;if(n.priority)return;if(Math.abs(p.v)*KMH>15)violate('blind',`進入速度 ${Math.round(Math.abs(p.v)*KMH)}km/h`);}
-function nodeExit(N,p){if(!N.L||p.v<0)return;const turn=turnOf(N.h0,p.h);const n=N.n;
+function nodeExit(N,p){if(!N.L||p.v<0)return;const n=N.n;let turn;
+  if(n.poly&&p.loc&&p.loc.kind==='road'&&p.loc.lane){const l=p.loc.lane;const r2=l.road;const L2=r2.startNode===n?r2.startLeg:r2.endNode===n?r2.endLeg:null;turn=polyTurn(n,N.L,L2,N.h0,l.pos(0).h);}// 多角形の交差点：出た道路の向きと脚で判定（02h）
+  else turn=turnOf(N.h0,p.h);
   if(n.noTurn&&n.noTurn[N.L]&&n.noTurn[N.L].includes(turn))violate('dirBan',turn==='R'?'この交差点は、さくら通りから右折できません（直進・左折のみ）。':'');
   if(turn==='L'||turn==='R'){const b=N.blink;if(b.side!==turn){if(b.side)violate('blink','曲がる方向と逆の合図でした。');else violate('blink',turn==='L'?'左折の合図が出ていませんでした。':'右折の合図が出ていませんでした。');}
     else if(b.dist<Math.min(24,(b.d0||99)*0.6))violate('blinkLate',`合図を出したのは交差点の約${Math.max(0,Math.round(b.dist))}m手前でした。`);
@@ -4364,7 +4539,7 @@ function ov(html){const o=$('ov');o.innerHTML=html;o.hidden=false;o.scrollTop=0;
 function closeOv(){$('ov').hidden=true;$('ov').innerHTML='';}
 const esc=(s)=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 // メニューのカテゴリ（タブ）
-const MENU_CATS=[{k:'town',t:'一般道',sub:'みなみ町'},{k:'city',t:'都会',sub:'さくら区'},{k:'exp',t:'高速道路',sub:'みなみ自動車道'},{k:'aori',t:'あおり運転',sub:'受けたら・しない'},{k:'park',t:'駐車',sub:'車庫入れ・縦列'},{k:'sign',t:'標識',sub:'コース・図鑑'},{k:'free',t:'自由走行',sub:'採点なし'}];
+const MENU_CATS=[{k:'town',t:'一般道',sub:'みなみ町'},{k:'city',t:'都会',sub:'さくら区'},{k:'tokyo',t:'東京',sub:'新宿駅周辺'},{k:'exp',t:'高速道路',sub:'みなみ自動車道'},{k:'aori',t:'あおり運転',sub:'受けたら・しない'},{k:'park',t:'駐車',sub:'車庫入れ・縦列'},{k:'sign',t:'標識',sub:'コース・図鑑'},{k:'free',t:'自由走行',sub:'採点なし'}];
 function menuCat(){const c=store('mdk_tab');return MENU_CATS.some(x=>x.k===c&&STAGES.some(s=>s.cat===x.k)||x.k===c&&x.k==='sign')?c:'town';}
 function showMenu(cat){STAGE.running=false;STAGE.menu=true;$('hud').hidden=true;applyMirrors();$('eew').hidden=true;$('phone').hidden=true;
   cat=(typeof cat==='string'&&cat)||menuCat();const cats=MENU_CATS.filter(c=>STAGES.some(s=>s.cat===c.k)||(c.k==='sign'&&typeof showSignBook==='function'));
@@ -4438,7 +4613,7 @@ function showResult(extra){const s=STAGES[STAGE.idx];const pass=J.score>=70&&!J.
   const prec=extra&&extra.prec!==undefined?`<div class="small">停止位置との差 ${extra.prec.toFixed(2)}m ${extra.prec<0.5?'（ぴったり！）':''}</div>`:'';
   const checks=extra&&extra.checks?`<p class="small" style="margin-top:14px">${esc(extra.checksTitle||'確認した項目')}</p><ul class="vlist">${extra.checks.map(c=>`<li class="${c.bad?'':'good'}"><b>${c.bad?'×':'○'} ${esc(c.t)}</b>${c.law?`<span class="law">${esc(c.law)}</span>`:''}</li>`).join('')}</ul>`:'';
   const note=extra&&extra.note?`<p class="lede" style="margin-top:12px">${esc(tx(extra.note))}</p>`:'';
-  const t=Math.floor(STAGE.time);const nx=STAGES[STAGE.idx+1];const hasNext=!!nx&&!(nx.special&&!s.special);// 特殊モードへは「次の教習へ」でつなげない
+  const t=Math.floor(STAGE.time);const nx=STAGES[STAGE.idx+1];const hasNext=!!nx&&!(nx.special&&!s.special)&&!s.special;// 特殊モードへは「次の教習へ」でつなげない（特殊モードからも次へは出さない）
   const catT=(MENU_CATS.find(c=>c.k===s.cat)||{t:'教習'}).t;const no=STAGES.filter(x=>x.cat===s.cat).indexOf(s)+1;
   ov(`<div class="card"><header><div><div class="eyebrow">${esc(catT)} ・ 教習${no} の結果</div><h2>${esc(s.name)}</h2></div></header><div class="body">
     <div class="resTop">${sc?`<span class="stamp big ${pass?'':'ng'}">${pass?'合格':'不合格'}</span><div><div class="resScore">${J.score}<small>点</small></div><div class="small">走行時間 ${Math.floor(t/60)}分${t%60}秒${J.major?'・重大な違反あり':''}</div>${prec}</div>`:'<div class="small">フリー走行（採点なし）</div>'}</div>
@@ -4669,7 +4844,7 @@ function routeNodes(from,to,banLeg,exitLeg){if(!from||!to)return null;const key=
     if(du>9000)continue;
     for(const L in cur.n.legs){if(L===cur.L)continue;const e=cur.n.legs[L];const r=e.road;const dir=e.end==='start'?1:-1;if(!r.lanes(dir).length||r.def.pedOnly)continue;
       // 指定方向外進行禁止（右折禁止など）
-      if(cur.L&&cur.n.noTurn&&cur.n.noTurn[cur.L]&&cur.n.noTurn[cur.L].includes(turnOf(legHeading[cur.L],outHeading[L])))continue;
+      if(cur.L&&cur.n.noTurn&&cur.n.noTurn[cur.L]&&cur.n.noTurn[cur.L].includes(legTurn(cur.n,cur.L,L)))continue;
       const m=dir>0?r.endNode:r.startNode;if(!m)continue;if(m.kind==='portal'&&m!==to)continue;const Lm=dir>0?r.endLeg:r.startLeg;const k=key(m,Lm);const d=du+r.len+10;
       if(!dist.has(k)||d<dist.get(k)){dist.set(k,d);prev.set(k,cur);q.push({n:m,L:Lm});}}}
   if(!end){if(from===to&&(!exitLeg||banLeg!==exitLeg)){const p=[from];p.arrL=banLeg;return p;}return null;}
@@ -5596,6 +5771,45 @@ function shoutVoice(){const seq=++SHOUT.seq;const bleep=()=>{if(SFX.ctx&&SFX.on)
     u1.onend=next;u1.onerror=()=>{step=2;};speechSynthesis.speak(u1);setTimeout(next,1500);}catch(x){bleep();}}
 {const b=$('btnShout');if(b){b.addEventListener('click',(ev)=>{ev.preventDefault();act('shout',true);b.blur();});b.addEventListener('contextmenu',(ev)=>ev.preventDefault());}}
 
+// ===== 12h_shinjuku.js : 東京・新宿駅周辺の地図と教習 =====
+// 道路名と座標で位置を決める（道路の id は変換のたびに変わりうるので使わない）
+function sjRoadAt(name,x,z){let best=null,bd=1e9;for(const r of NET.roads){if(name&&r.name!==name)continue;for(let s=0;s<=r.len;s+=4){const P=r.at(s);const d=Math.hypot(P.x-x,P.z-z);if(d<bd){bd=d;best={road:r,s};}}}
+  if(!best)return null;// 細かく
+  const r=best.road;let s=best.s;for(let k=0;k<3;k++){let bs=s,bdd=1e9;for(let t=s-4;t<=s+4;t+=0.5){const tt=clamp(t,0,r.len);const P=r.at(tt);const d=Math.hypot(P.x-x,P.z-z);if(d<bdd){bdd=d;bs=tt;}}s=bs;}
+  return{road:r,s,dist:bd};}
+// toward：進みたい方角 'N'|'E'|'S'|'W'
+function sjPose(name,x,z,toward){const q=sjRoadAt(name,x,z);if(!q)return null;q.s=clamp(q.s,Math.min(14,q.road.len/2),Math.max(q.road.len/2,q.road.len-14));/* 交差点の中から始めない */const h=q.road.at(q.s).h;const want=outHeading[toward];// その方角へ進む向き
+  const dir=Math.cos(wrapA(h-want))>=0?1:-1;if(dir>0?!q.road.nF:!q.road.nB)return{road:q.road,s:q.s,dir:-dir};return{road:q.road,s:q.s,dir};}
+function sjStart(name,x,z,toward){const q=sjPose(name,x,z,toward);if(!q)return{x,z,y:0,h:0};const P=edgePos(q.road,q.s,q.dir,PLAYER.W/2+0.45);return{x:P.x,z:P.z,y:P.y,h:P.h};}
+function sjGoal(name,x,z,toward){const q=sjPose(name,x,z,toward);return q?goalFrom(q):null;}
+MAPS.shinjuku={id:'shinjuku',name:'新宿駅周辺',bounds:[-880,-880,880,880],keepOut:[],tile:220,pedCap:360,nodeMargin:1.5,miniScale:1.0,fogMul:1.35,crossRate:1.4,crowd:false,recycle:true,recycleR:380,skylineMap:true,
+  ensure(cb){const ok=shinjukuEnsure((ready)=>{if(ready){cb();return;}
+      ov(`<div class="card"><header><div><div class="eyebrow">東京</div><h2>地図を読み込めませんでした</h2></div></header><div class="body"><p class="lede">新宿駅周辺の地図データ（assets/maps/shinjuku.json）を読み込めませんでした。${location.protocol==='file:'?'この地図は、ファイルを直接開いた状態では使えません。公開ページ（https://）で開いてください。':'通信の状態を確かめて、もう一度お試しください。'}</p><div class="btnRow"><button class="ghost" id="bMenuSj">原簿にもどる</button></div></div></div>`);
+      $('bMenuSj').onclick=showMenu;});
+    if(!ok)ov('<div class="card"><header><div><div class="eyebrow">東京</div><h2>新宿駅周辺の地図を読み込んでいます…</h2></div></header><div class="body"><p class="lede">実在の地図データ（約1MB）を読み込みます。少しお待ちください。</p></div></div>');
+    return ok;},
+  def(){return shinjukuDef();},
+  after(){for(const r of NET.roads)townFeatS(r);},
+  traffic:{n:80,bikes:8,peds:230,mix:{kei:2,compact:3,sedan:3,van:1.5,suv:1.5,truck:1.0,taxi:4,bus:1.2,big:0.3,moto:0.8}},
+  signIds:['s30','s40','s50','s60','stop','xwalk','oneway','noentry','nostopping','noparking','tomare','diamond','m30','m40','m50','m60','blank'],
+  signs(){autoSigns();},
+  build(B,wires){buildShinjuku(B,wires);},
+  skyline(B){sjSkyline(B);},
+  credits:'地図データ：© OpenStreetMap contributors（ODbL）／国土交通省 Project PLATEAU 3D都市モデル（新宿区 2025）'};
+STAGES.push(
+ {id:'t1',cat:'tokyo',map:'shinjuku',name:'甲州街道：片側3車線の幹線を東へ',desc:'実在の新宿の道路。多車線の幹線道路で車線を選び、駅前の人と車の多さに備える',env:'day',envLabel:'昼・晴れ',autoReady:true,
+  intro:'東京・新宿。甲州街道を西新宿から東へ走り、新宿駅南口を過ぎた先の停止位置に止めます。道路の形と建物の高さは実在の地図データから作ってあります（店名・看板は架空）。',
+  points:['片側に車線が多い道路では、左の車線を基本に走る（第20条第1項）。右の車線は追い越しや右折のため','交差点の手前では路面の矢印と標識で、進める方向を確かめる','駅前は横断歩道を渡る人が多い。渡ろうとしている人がいれば止まって譲る（第38条第1項）','路線バス・タクシーが急に左に寄って止まることがある。車間距離を十分に'],
+  startPose(){return sjStart('甲州街道',-640,380,'E');},goalPose(){return sjGoal('甲州街道',240,100,'E');},way:[]},
+ {id:'t2',cat:'tokyo',map:'shinjuku',name:'明治通り：新宿三丁目から北へ',desc:'信号の多い大通り。右折車線と矢印信号、交差点の先が詰まっているときの判断',env:'day',envLabel:'昼・晴れ',autoReady:true,
+  intro:'明治通りを南から北へ走り、靖国通りとの交差点（新宿五丁目付近）を過ぎた先の停止位置に止めます。',
+  points:['交差点の先が詰まっているときは、青信号でも交差点に入らない（第50条第1項）','右折は右折車線から。対向の直進車・左折車を先に通す（第37条）','右向きの矢印信号が出ている間は右折できる','黄色の線（進路変更禁止）の区間では車線を変えない'],
+  startPose(){return sjStart('明治通り',291,459,'N');},goalPose(){return sjGoal('明治通り',640,-700,'N');},way:[]},
+ {id:'f3',cat:'free',map:'shinjuku',name:'東京・新宿 フリー走行',desc:'採点なしで新宿駅周辺を自由に走る。甲州街道・明治通り・靖国通り・西新宿の高層ビル街',env:'day',envLabel:'選べる',autoReady:true,scoring:false,envChoice:true,
+  intro:'採点なしで、実在の地図データから作った新宿駅周辺を自由に走れます。時間帯と天気を選んでから始めましょう。',points:['違反の解説は表示されますが、点数はつきません','地図の端まで行くと、向きを変えて戻ります','{pause}でいつでもメニューに戻れます'],
+  startPose(){return sjStart('甲州街道',-640,380,'E');},goalPose(){return null;},way:[]},
+);
+
 // ===== 13_main.js : 地図の読み込み・進行・ナビ・メインループ =====
 const NAV={wps:[],goal:null,pts:[],inWp:false,turn:null,turnDist:99};
 let CURMAP=null;const PERSIST=[];
@@ -5635,7 +5849,8 @@ function buildTextSigns(){for(const t of TEXTSIGNS){const map=t.spec?guideTex(t.
     m.position.set(t.x,t.y,t.z);m.rotation.y=-t.h;m.userData.mapOwned=true;m.userData.textSign=true;scene.add(m);}
   for(const t of SHOPSIGN){const tex=textTex({text:t.text,bg:t.col,fg:'#ffffff',vert:true});const mat=new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide});const m=new THREE.Mesh(new THREE.PlaneGeometry(t.w,t.hh),mat);m.position.set(t.x,t.y,t.z);m.rotation.y=-t.h;m.userData.mapOwned=true;m.userData.textSign=true;scene.add(m);}}
 // ---- 教習の開始 ----
-function startStage(i){const s=STAGES[i];STAGE.idx=i;
+function startStage(i){const s=STAGES[i];{const Mp=MAPS[s.map||'town'];if(Mp&&Mp.ensure&&!Mp.ensure(()=>startStage(i)))return;}// 地図データを裏で読む地図（新宿）：読めてから始める
+  STAGE.idx=i;
   Object.assign(STAGE,{running:true,over:false,paused:false,menu:false,scoring:s.scoring!==false,startCheck:!!s.startCheck,startRules:s.startRules,time:0,lessonHint:null,queue:[],onAction:null,onContact:null,judgeExtra:null,finishOnQuake:null,doneT:0,emergency:false,fine:!!s.fine,hornOK:false,laneCheck:s.laneCheck,
     tick:null,navFn:null,autoStop:null,autoPlan:null,autoExit:null,aori:null,finishNote:null,beforeFinish:null,sgCourse:null,sgSeen:null,sgClosed:null,inPA:false,paCoach:0,edgeHint:0,mergeCoach:0,missPA:0,stopT:0,stopCoach:0});if(PLAYER)PLAYER.engineFault=false;
   loadMap(s.map||'town');R=rng(window.__seed!==undefined?window.__seed:Date.now()%100000);AUTO.agent=null;INPUT.auto=null;for(const k in PK)delete PK[k];STAGE.revTip=0;
@@ -5678,7 +5893,7 @@ function navTick(){const p=PLAYER;const A=J.A;NAV.turn=null;NAV.turnDist=99;STAG
   const nxt=path[1];let ex=nxt?legTo(n0,nxt):null;
   if(!ex&&G&&path.length===1&&path.exitLeg)ex=path.exitLeg;
   if(!ex){setNav('S',A.dEdge,'道なりに');return;}
-  const turn=turnOf(legHeading[A.L],outHeading[ex]);const what=n0.signal?'信号':n0.stopLegs.includes(A.L)?'一時停止':Object.keys(n0.legs).length===2?'角':'交差点';
+  const turn=legTurn(n0,A.L,ex);const what=n0.signal?'信号':n0.stopLegs.includes(A.L)?'一時停止':Object.keys(n0.legs).length===2?'角':'交差点';
   setNav(turn==='U'?'S':turn,A.dEdge,`${what}を${turn==='L'?'左折':turn==='R'?'右折':'直進'}`);if(turn==='L'||turn==='R'){NAV.turn=turn;NAV.turnDist=A.dEdge;}
   if((turn==='L'||turn==='R')&&A.dEdge<70&&A.dEdge>35&&STAGE.lastTurnCoach!==n0.id+A.L){STAGE.lastTurnCoach=n0.id+A.L;const multi=A.road.lanes(A.dir).length>1;
     coach(`この先の${what}を${turn==='L'?'左折':'右折'}します。30m手前で${turn==='L'?'左の合図（{bl}）':'右の合図（{br}）'}。${turn==='L'?(multi?'一番左の車線から曲がります。':'左に寄せて徐行。'):(multi?'右折車線・一番右の車線から。対向車を先に。':'中央に寄せて、対向車を先に。')}`,6);}}
@@ -5730,13 +5945,13 @@ function boot(data){
   VOICE.on=SETTINGS.voice;buildControls();bindKeys();applyTouch();resizeView();window.addEventListener('resize',()=>{resizeView();applyMirrors();});
   $('btnPause').onclick=togglePause;$('btnCam').onclick=toggleView;$('btnSound').onclick=()=>{SETTINGS.sound=!SETTINGS.sound;SFX.init();SFX.setOn(SETTINGS.sound);store('mdk_settings',SETTINGS);toast('info',SETTINGS.sound?'サウンド オン':'サウンド オフ',0,'');};
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&STAGE.running&&!STAGE.paused&&!STAGE.over)togglePause();});
-  $('loadMsg').hidden=true;showMenu();requestAnimationFrame(frame);carAssetsStart();// 車の3Dモデルは起動後に裏で読み込む（04b）
+  $('loadMsg').hidden=true;showMenu();requestAnimationFrame(frame);carAssetsStart();if(typeof shinjukuStart==='function')setTimeout(shinjukuStart,1500);// 車の3Dモデルは起動後に裏で読み込む（04b）
   window.__sim={STAGE,J,VEH,PEDS,SIGS,XINGS,XWALKS,NET,NAV,EVS,KEY,INPUT,startStage,act,locate,loadMap,
     step(n,dt=1/30){for(let i=0;i<n;i++){if(!STAGE.paused)simStep(dt);}if(STAGE.running){placeCams(dt);hudT=0;updateHud(dt);}},
     render(){if(STAGE.running){placeCams(0.016);cockpit.visible=viewMode==='cockpit';}renderPeds(0);CULL.t=3;cullTick();renderAll(STAGE.running&&viewMode==='cockpit'&&SETTINGS.mirrors);},
     renderAt(P,T){cockpit.visible=false;renderer.setRenderTarget(null);renderer.setScissorTest(false);renderer.setViewport(0,0,window.innerWidth,window.innerHeight);camera.position.set(P[0],P[1],P[2]);camera.lookAt(T[0],T[1],T[2]);renderPeds(0);if(skyMesh)skyMesh.position.set(camera.position.x,0,camera.position.z);sun.position.set(P[0]+80,(P[1]||0)+120,P[2]+50);sun.target.position.set(T[0],T[1],T[2]);renderer.render(scene,camera);},
     setView(m){viewMode=m;applyMirrors();},setEnv(m){setEnv(m);},get P(){return PLAYER;},get J2(){return J;},renderer:()=>renderer,camera:()=>camera,scene:()=>scene,dbgB:{BUILT,clearOfRoads,overlapsBuilt,CITYB:typeof CITYB!=='undefined'?CITYB:null},
-    carAssets:()=>({state:CARASSET.state,loaded:CARASSET.loaded,errors:CARASSET.errors,ready:carAssetsReady()}),SIGNS:()=>SIGNDATA,signCanvas:(id,px)=>signCanvas(id,px),signMissing:()=>signArtMissing(),auto(on,opts){AUTO.on=!!on;AUTO.agent=null;Object.assign(AUTO,opts||{});if(!on)INPUT.auto=null;},AUTO,STAGES,MAPS,dbg:()=>autoDbg(),planner:(l)=>autoPlanner(l),answer:()=>choiceAnswerOK(),dev:{locateDbg,isDrivable,drvAt,drvProject,corners,inNode,connAt,locate,makeDrivePath,obstAhead,laneGapAt,nearHazards,leaderOnPath,wantsExit,wantedDecel,tryLaneChange,parkTarget:()=>typeof PARK!=='undefined'&&PARK.target?{x:PARK.target.x,z:PARK.target.z,za:PARK.target.za,zb:PARK.target.zb}:null,streetParkJudge:()=>streetParkJudge(),PK:()=>JSON.parse(JSON.stringify(PK,(k,v)=>typeof v==='function'||(v&&v.var)?undefined:v))}};}
+    carAssets:()=>({state:CARASSET.state,loaded:CARASSET.loaded,errors:CARASSET.errors,ready:carAssetsReady()}),shinjuku:()=>({state:SHINJUKU.state,err:SHINJUKU.err,n:SHINJUKU.data?SHINJUKU.data.roads.length:0}),sj:{roadAt:sjRoadAt,pose:sjPose,start:sjStart,goal:sjGoal},locateDbg,navPath,routeNodes,SIGNS:()=>SIGNDATA,signCanvas:(id,px)=>signCanvas(id,px),signMissing:()=>signArtMissing(),auto(on,opts){AUTO.on=!!on;AUTO.agent=null;Object.assign(AUTO,opts||{});if(!on)INPUT.auto=null;},AUTO,STAGES,MAPS,dbg:()=>autoDbg(),planner:(l)=>autoPlanner(l),answer:()=>choiceAnswerOK(),dev:{locateDbg,isDrivable,drvAt,drvProject,corners,inNode,connAt,locate,makeDrivePath,obstAhead,laneGapAt,nearHazards,leaderOnPath,wantsExit,wantedDecel,tryLaneChange,parkTarget:()=>typeof PARK!=='undefined'&&PARK.target?{x:PARK.target.x,z:PARK.target.z,za:PARK.target.za,zb:PARK.target.zb}:null,streetParkJudge:()=>streetParkJudge(),PK:()=>JSON.parse(JSON.stringify(PK,(k,v)=>typeof v==='function'||(v&&v.var)?undefined:v))}};}
 // フォントを待ってから起動（標識の文字のため）。フォントのCSSは起動を止めないよう media="print" で読み込んでいる（src/head.html）。
 // CSSは最大5秒待ち、読み込めたら画面にも使う。フォント本体はそのあと最大2.5秒待つ。間に合わなければフォントなしで起動する
 function fontCssReady(ms){const l=document.getElementById('fontCss');return new Promise(res=>{if(!l){res();return;}
@@ -5756,7 +5971,7 @@ function autoPlanner(l){if(STAGE.autoPlan){const t=STAGE.autoPlan(l);if(t)return
   const n=l.endNode();if(!n||n.kind!=='x')return null;const G=NAV.goal;
   if(!NAV.wps.length&&!(G&&G.road)){// 行き先なし（自由走行）：地図の外に出る道は選ばない
     const moves=movesFrom(l);const ok=[...moves.keys()].filter(t=>{const c=moves.get(t)[0];const r2=c.next.road;const far=c.next.dir>0?r2.endNode:r2.startNode;return t!=='U'&&far&&far.kind!=='portal';});return ok.length?pick(ok):null;}
-  const path=navPath(n,l.inLeg);if(!path)return null;let ex=path.length>=2?legTo(n,path[1]):path.exitLeg;if(!ex)return null;return turnOf(legHeading[l.inLeg],outHeading[ex]);}
+  const path=navPath(n,l.inLeg);if(!path)return null;let ex=path.length>=2?legTo(n,path[1]):path.exitLeg;if(!ex)return null;return legTurn(n,l.inLeg,ex);}
 function autoCancelLc(a){const c=a.lc;if(!c)return;const s=a.lane.sOf(a.u);const f=c.from;if(f&&f.road===a.lane.road){a.lane=f;a.u=clamp(f.uOf(s),0,f.len);a.d=0;}a.lc=null;AUTO.lastLc=null;}
 function autoSetLane(a,l,keepD){if(!a.lane||a.lane.road!==l.road)a.planTurn=null;a.lane=l;a.next=null;a.lc=null;if(!keepD)a.d=0;else a.d=clamp(a.d,-l.w/2,l.w/2);a.stopDone=false;a.xingDone=false;a.wait=0;}
 function autoSync(){const p=PLAYER,a=AUTO.agent;a.v=Math.max(0,p.v);a.x=p.x;a.z=p.z;a.h=p.h;a.y=p.y;const q=p.loc;

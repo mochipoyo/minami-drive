@@ -37,7 +37,8 @@ function buildTextSigns(){for(const t of TEXTSIGNS){const map=t.spec?guideTex(t.
     m.position.set(t.x,t.y,t.z);m.rotation.y=-t.h;m.userData.mapOwned=true;m.userData.textSign=true;scene.add(m);}
   for(const t of SHOPSIGN){const tex=textTex({text:t.text,bg:t.col,fg:'#ffffff',vert:true});const mat=new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide});const m=new THREE.Mesh(new THREE.PlaneGeometry(t.w,t.hh),mat);m.position.set(t.x,t.y,t.z);m.rotation.y=-t.h;m.userData.mapOwned=true;m.userData.textSign=true;scene.add(m);}}
 // ---- 教習の開始 ----
-function startStage(i){const s=STAGES[i];STAGE.idx=i;
+function startStage(i){const s=STAGES[i];{const Mp=MAPS[s.map||'town'];if(Mp&&Mp.ensure&&!Mp.ensure(()=>startStage(i)))return;}// 地図データを裏で読む地図（新宿）：読めてから始める
+  STAGE.idx=i;
   Object.assign(STAGE,{running:true,over:false,paused:false,menu:false,scoring:s.scoring!==false,startCheck:!!s.startCheck,startRules:s.startRules,time:0,lessonHint:null,queue:[],onAction:null,onContact:null,judgeExtra:null,finishOnQuake:null,doneT:0,emergency:false,fine:!!s.fine,hornOK:false,laneCheck:s.laneCheck,
     tick:null,navFn:null,autoStop:null,autoPlan:null,autoExit:null,aori:null,finishNote:null,beforeFinish:null,sgCourse:null,sgSeen:null,sgClosed:null,inPA:false,paCoach:0,edgeHint:0,mergeCoach:0,missPA:0,stopT:0,stopCoach:0});if(PLAYER)PLAYER.engineFault=false;
   loadMap(s.map||'town');R=rng(window.__seed!==undefined?window.__seed:Date.now()%100000);AUTO.agent=null;INPUT.auto=null;for(const k in PK)delete PK[k];STAGE.revTip=0;
@@ -80,7 +81,7 @@ function navTick(){const p=PLAYER;const A=J.A;NAV.turn=null;NAV.turnDist=99;STAG
   const nxt=path[1];let ex=nxt?legTo(n0,nxt):null;
   if(!ex&&G&&path.length===1&&path.exitLeg)ex=path.exitLeg;
   if(!ex){setNav('S',A.dEdge,'道なりに');return;}
-  const turn=turnOf(legHeading[A.L],outHeading[ex]);const what=n0.signal?'信号':n0.stopLegs.includes(A.L)?'一時停止':Object.keys(n0.legs).length===2?'角':'交差点';
+  const turn=legTurn(n0,A.L,ex);const what=n0.signal?'信号':n0.stopLegs.includes(A.L)?'一時停止':Object.keys(n0.legs).length===2?'角':'交差点';
   setNav(turn==='U'?'S':turn,A.dEdge,`${what}を${turn==='L'?'左折':turn==='R'?'右折':'直進'}`);if(turn==='L'||turn==='R'){NAV.turn=turn;NAV.turnDist=A.dEdge;}
   if((turn==='L'||turn==='R')&&A.dEdge<70&&A.dEdge>35&&STAGE.lastTurnCoach!==n0.id+A.L){STAGE.lastTurnCoach=n0.id+A.L;const multi=A.road.lanes(A.dir).length>1;
     coach(`この先の${what}を${turn==='L'?'左折':'右折'}します。30m手前で${turn==='L'?'左の合図（{bl}）':'右の合図（{br}）'}。${turn==='L'?(multi?'一番左の車線から曲がります。':'左に寄せて徐行。'):(multi?'右折車線・一番右の車線から。対向車を先に。':'中央に寄せて、対向車を先に。')}`,6);}}
@@ -132,13 +133,13 @@ function boot(data){
   VOICE.on=SETTINGS.voice;buildControls();bindKeys();applyTouch();resizeView();window.addEventListener('resize',()=>{resizeView();applyMirrors();});
   $('btnPause').onclick=togglePause;$('btnCam').onclick=toggleView;$('btnSound').onclick=()=>{SETTINGS.sound=!SETTINGS.sound;SFX.init();SFX.setOn(SETTINGS.sound);store('mdk_settings',SETTINGS);toast('info',SETTINGS.sound?'サウンド オン':'サウンド オフ',0,'');};
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&STAGE.running&&!STAGE.paused&&!STAGE.over)togglePause();});
-  $('loadMsg').hidden=true;showMenu();requestAnimationFrame(frame);carAssetsStart();// 車の3Dモデルは起動後に裏で読み込む（04b）
+  $('loadMsg').hidden=true;showMenu();requestAnimationFrame(frame);carAssetsStart();if(typeof shinjukuStart==='function')setTimeout(shinjukuStart,1500);// 車の3Dモデルは起動後に裏で読み込む（04b）
   window.__sim={STAGE,J,VEH,PEDS,SIGS,XINGS,XWALKS,NET,NAV,EVS,KEY,INPUT,startStage,act,locate,loadMap,
     step(n,dt=1/30){for(let i=0;i<n;i++){if(!STAGE.paused)simStep(dt);}if(STAGE.running){placeCams(dt);hudT=0;updateHud(dt);}},
     render(){if(STAGE.running){placeCams(0.016);cockpit.visible=viewMode==='cockpit';}renderPeds(0);CULL.t=3;cullTick();renderAll(STAGE.running&&viewMode==='cockpit'&&SETTINGS.mirrors);},
     renderAt(P,T){cockpit.visible=false;renderer.setRenderTarget(null);renderer.setScissorTest(false);renderer.setViewport(0,0,window.innerWidth,window.innerHeight);camera.position.set(P[0],P[1],P[2]);camera.lookAt(T[0],T[1],T[2]);renderPeds(0);if(skyMesh)skyMesh.position.set(camera.position.x,0,camera.position.z);sun.position.set(P[0]+80,(P[1]||0)+120,P[2]+50);sun.target.position.set(T[0],T[1],T[2]);renderer.render(scene,camera);},
     setView(m){viewMode=m;applyMirrors();},setEnv(m){setEnv(m);},get P(){return PLAYER;},get J2(){return J;},renderer:()=>renderer,camera:()=>camera,scene:()=>scene,dbgB:{BUILT,clearOfRoads,overlapsBuilt,CITYB:typeof CITYB!=='undefined'?CITYB:null},
-    carAssets:()=>({state:CARASSET.state,loaded:CARASSET.loaded,errors:CARASSET.errors,ready:carAssetsReady()}),SIGNS:()=>SIGNDATA,signCanvas:(id,px)=>signCanvas(id,px),signMissing:()=>signArtMissing(),auto(on,opts){AUTO.on=!!on;AUTO.agent=null;Object.assign(AUTO,opts||{});if(!on)INPUT.auto=null;},AUTO,STAGES,MAPS,dbg:()=>autoDbg(),planner:(l)=>autoPlanner(l),answer:()=>choiceAnswerOK(),dev:{locateDbg,isDrivable,drvAt,drvProject,corners,inNode,connAt,locate,makeDrivePath,obstAhead,laneGapAt,nearHazards,leaderOnPath,wantsExit,wantedDecel,tryLaneChange,parkTarget:()=>typeof PARK!=='undefined'&&PARK.target?{x:PARK.target.x,z:PARK.target.z,za:PARK.target.za,zb:PARK.target.zb}:null,streetParkJudge:()=>streetParkJudge(),PK:()=>JSON.parse(JSON.stringify(PK,(k,v)=>typeof v==='function'||(v&&v.var)?undefined:v))}};}
+    carAssets:()=>({state:CARASSET.state,loaded:CARASSET.loaded,errors:CARASSET.errors,ready:carAssetsReady()}),shinjuku:()=>({state:SHINJUKU.state,err:SHINJUKU.err,n:SHINJUKU.data?SHINJUKU.data.roads.length:0}),sj:{roadAt:sjRoadAt,pose:sjPose,start:sjStart,goal:sjGoal},locateDbg,navPath,routeNodes,SIGNS:()=>SIGNDATA,signCanvas:(id,px)=>signCanvas(id,px),signMissing:()=>signArtMissing(),auto(on,opts){AUTO.on=!!on;AUTO.agent=null;Object.assign(AUTO,opts||{});if(!on)INPUT.auto=null;},AUTO,STAGES,MAPS,dbg:()=>autoDbg(),planner:(l)=>autoPlanner(l),answer:()=>choiceAnswerOK(),dev:{locateDbg,isDrivable,drvAt,drvProject,corners,inNode,connAt,locate,makeDrivePath,obstAhead,laneGapAt,nearHazards,leaderOnPath,wantsExit,wantedDecel,tryLaneChange,parkTarget:()=>typeof PARK!=='undefined'&&PARK.target?{x:PARK.target.x,z:PARK.target.z,za:PARK.target.za,zb:PARK.target.zb}:null,streetParkJudge:()=>streetParkJudge(),PK:()=>JSON.parse(JSON.stringify(PK,(k,v)=>typeof v==='function'||(v&&v.var)?undefined:v))}};}
 // フォントを待ってから起動（標識の文字のため）。フォントのCSSは起動を止めないよう media="print" で読み込んでいる（src/head.html）。
 // CSSは最大5秒待ち、読み込めたら画面にも使う。フォント本体はそのあと最大2.5秒待つ。間に合わなければフォントなしで起動する
 function fontCssReady(ms){const l=document.getElementById('fontCss');return new Promise(res=>{if(!l){res();return;}

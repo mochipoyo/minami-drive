@@ -55,3 +55,14 @@ Windows：エクスプローラーでそのフォルダを開き、上のアド�
   - サイトポリシー：https://www.mlit.go.jp/plateau/site-policy/
 
 実在の店名・ロゴは使いません（建物の形と高さ、道路の形だけを使います）。
+
+## 4. ゲーム用のデータに変換する（開発者向け）
+
+```
+python3 build_map.py shinjuku.json --out ../../assets/maps/shinjuku.json --png check.png
+```
+
+- 道路の選別（車が走る道路だけ）、交差点での分割、上下線が別々の一方通行として描かれている大通りの統合、
+  交差点の脚（N/E/S/W。1交差点に最大4本）の割り当て、交差点の切り取り距離、建物の道路からの押し出しをして、
+  `assets/maps/shinjuku.json` を書き出します。`--png` で確認用の図も出ます。
+- 変換のたびに道路の id は変わるので、教習の位置は道路名と座標で指定しています（src/js/12h_shinjuku.js）。
