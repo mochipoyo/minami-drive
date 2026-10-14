@@ -91,4 +91,18 @@ export default async function ({ browser, url, rep }) {
     rep.ok(S, '端末を回転させても、描画の大きさと縦横比が新しい画面に合う', ok && errors.length === 0, JSON.stringify(r) + ' ' + errors.slice(0, 1).join(''));
     await ctx.close();
   }
+  // 6) SNS で共有したときのカード（OGP / Twitter Card）：画像は絶対 URL で、実際に 1200×630 の画像が置いてある
+  {
+    const { ctx, page, errors } = await openPage(browser, url);
+    await waitMenu(page);
+    const m = await page.evaluate(() => { const g = (sel) => { const e = document.querySelector(sel); return e ? e.getAttribute('content') : null; };
+      return { card: g('meta[name="twitter:card"]'), tImg: g('meta[name="twitter:image"]'), ogImg: g('meta[property="og:image"]'), ogUrl: g('meta[property="og:url"]'), ogTitle: g('meta[property="og:title"]'), ogDesc: g('meta[property="og:description"]'), w: g('meta[property="og:image:width"]'), h: g('meta[property="og:image:height"]'), alt: g('meta[property="og:image:alt"]'), tTitle: g('meta[name="twitter:title"]') }; });
+    const abs = (u) => /^https:\/\/mochipoyo\.github\.io\/minami-drive\/assets\/ogp\.jpg(\?v=\d+)?$/.test(u || '');
+    rep.ok(S, 'OGP / Twitter Card のタグがそろっている（summary_large_image・絶対 URL の画像・タイトル・説明）', m.card === 'summary_large_image' && abs(m.ogImg) && abs(m.tImg) && m.ogUrl === 'https://mochipoyo.github.io/minami-drive/' && !!m.ogTitle && !!m.ogDesc && m.w === '1200' && m.h === '630' && !!m.alt && !!m.tTitle, JSON.stringify(m).slice(0, 200));
+    // 画像そのもの（このリポジトリの assets/ogp.jpg）が 1200×630 で読める
+    const img = await page.evaluate((u) => new Promise((res) => { const i = new Image(); i.onload = () => res({ w: i.naturalWidth, h: i.naturalHeight }); i.onerror = () => res(null); i.src = u; }), url + 'assets/ogp.jpg');
+    rep.ok(S, 'OGP の画像（assets/ogp.jpg）が 1200×630 で置いてある', !!img && img.w === 1200 && img.h === 630, JSON.stringify(img));
+    rep.ok(S, 'エラーが出ない（OGP）', errors.length === 0, errors.slice(0, 2).join(' / '));
+    await ctx.close();
+  }
 }
