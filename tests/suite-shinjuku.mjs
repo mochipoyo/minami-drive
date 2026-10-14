@@ -22,16 +22,26 @@ export default async function ({ browser, url, rep }) {
     // 交差点の接続路（右左折の線）は、交差点の中（または接続路のそば）として走れる所になっている
     const drv = await page.evaluate(() => { const S = window.__sim; let bad = 0, tot = 0; for (const c of S.NET.conns) { for (let i = 1; i < c.pts.length - 1; i += 3) { tot++; const q = S.locate(c.pts[i].x, c.pts[i].z); if (!q || (q.kind === 'road' && q.band !== 'lane' && q.band !== 'shoulder' && !(q.band === 'median'))) bad++; } } return { bad, tot }; });
     rep.ok(S, '右左折の線の上はすべて走れる所（縁石に当たらない）', drv.bad === 0, JSON.stringify(drv));
+    // 右折レーン：分離帯の広い幹線の、信号のある交差点の手前にだけ付く（02g shinjukuTurnLanes）。対向車線と重ならない
+    const tl = await page.evaluate(() => { const S = window.__sim; const ps = []; for (const r of S.NET.roads) for (const p of r.patches) if (p.kind === 'turnR') ps.push({ r, p });
+      const bad = ps.filter(({ r, p }) => { const n = p.dir > 0 ? r.endNode : r.startNode; const hasR = p.conns.some(c => c.turn === 'R'); const overlap = r.nB && r.nF && r.med.w < r.w - 0.05; return !n || !n.signal || !hasR || overlap || !p.inLeg; });
+      const names = [...new Set(ps.map(({ r }) => r.name))]; return { n: ps.length, bad: bad.length, names }; });
+    rep.ok(S, '右折レーンが幹線（青梅街道・北通り・ふれあい通り・甲州街道など）の信号交差点の手前にあり、右折の線につながる', tl.n >= 20 && tl.bad === 0 && tl.names.includes('北通り') && tl.names.includes('ふれあい通り'), JSON.stringify(tl));
+    // 近い信号どうしは同じ周期（02g shinjukuSignalSync）：靖国通りの新宿区役所前（n30 付近）の信号は、隣の信号と同じ表示
+    const sync = await page.evaluate(() => { const S = window.__sim; let best = null, bd = 1e9; for (const n of S.NET.nodes) { if (!n.signal) continue; const d = Math.hypot(n.x - 203, n.z + 307); if (d < bd) { bd = d; best = n; } }
+      const g = S.SIGS.get(best.k); const near = [...S.SIGS.values()].filter(s => s !== g && Math.hypot(s.n.x - best.x, s.n.z - best.z) < 70); return { id: best.id, off: g.def.offset, same: near.every(s => s.cur[0] === g.cur[0] && s.cur[1] === g.cur[1] && Math.abs(s.t - g.t) < 0.01), near: near.length }; });
+    rep.ok(S, '近い信号どうし（靖国通りの歌舞伎町前）は同じ周期にそろっている', sync.off === 0 && sync.near >= 1 && sync.same, JSON.stringify(sync));
     rep.ok(S, 'エラーが出ない（読み込み・組み立て）', errors.length === 0, errors.slice(0, 3).join(' / '));
     await ctx.close();
   }
-  // 2) 教習を自動運転で最後まで（事故なし）
-  for (const id of ['t1', 't2']) {
+  // 2) 教習を自動運転で最後まで（事故なし）。t5 は右折レーンから右折すること（rightPos なし）
+  for (const id of ['t1', 't2', 't3', 't4', 't5']) {
     const { ctx, page, errors } = await openPage(browser, url);
     await waitMenu(page); await waitMap(page);
     await startStage(page, id, { seed: 1 });
     const r = await runAuto(page, 420);
-    rep.ok(S, `${id}：自動運転で停止位置まで走りきれる（事故なし）`, r.over && !r.log.includes('crash') && r.score >= 40, `over=${r.over} ${r.t}秒 ${r.score}点 ${r.log.join(',')}`);
+    const extra = id === 't5' ? !r.log.includes('rightPos') : id === 't4' ? !r.log.includes('curb') && !r.log.includes('noEntry') : true;
+    rep.ok(S, `${id}：自動運転で停止位置まで走りきれる（事故なし${id === 't5' ? '・右折レーンから右折' : id === 't4' ? '・縁石や逆走なし' : ''}）`, r.over && !r.log.includes('crash') && r.score >= 40 && extra, `over=${r.over} ${r.t}秒 ${r.score}点 ${r.log.join(',')}`);
     rep.ok(S, `エラーが出ない（${id}）`, errors.length === 0, errors.slice(0, 3).join(' / '));
     await ctx.close();
   }
