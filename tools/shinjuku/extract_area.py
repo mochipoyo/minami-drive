@@ -72,7 +72,7 @@ def meshes_in(bb):
 
 
 # ---- OpenStreetMap（Overpass） ----
-OVERPASS = 'https://overpass-api.de/api/interpreter'
+OVERPASS_URLS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']
 
 
 def overpass(bb, timeout=180):
@@ -90,9 +90,18 @@ def overpass(bb, timeout=180):
 (._;>;);
 out body;"""
     data = urllib.parse.urlencode({'data': q}).encode()
-    req = urllib.request.Request(OVERPASS, data=data, headers={'User-Agent': 'minami-drive-extract/1.0'})
-    with urllib.request.urlopen(req, timeout=timeout + 60) as r:
-        return json.load(r)
+    last = None
+    for attempt, url in enumerate(OVERPASS_URLS * 2):  # 混んでいたら別のサーバーで、少し待って再試行
+        try:
+            req = urllib.request.Request(url, data=data, headers={'User-Agent': 'minami-drive-extract/1.0'})
+            with urllib.request.urlopen(req, timeout=timeout + 60) as r:
+                return json.load(r)
+        except Exception as e:  # noqa
+            last = e
+            print(f'  取得に失敗（{url.split("/")[2]}）: {str(e)[:80]}')
+            if attempt < len(OVERPASS_URLS) * 2 - 1:
+                time.sleep(20)
+    raise RuntimeError(f'OpenStreetMap（Overpass）から取得できませんでした: {last}')
 
 
 def osm_to_layers(osm, proj):
@@ -195,13 +204,24 @@ def read_plateau(zip_path, bb, proj, log=print):
     codes = meshes_in(bb)
     log(f'PLATEAU: 範囲にかかる3次メッシュ {codes}')
     out = []
-    with zipfile.ZipFile(zip_path) as z:
+    # zip のまま読む。展開済みのフォルダが渡されたときは、その中の bldg/*.gml を探す
+    if os.path.isdir(zip_path):
+        names = [os.path.join(d, fn) for d, _, fs in os.walk(zip_path) for fn in fs
+                 if fn.endswith('.gml') and os.path.basename(d) == 'bldg']
+        opener = lambda n: open(n, 'rb')
+        z = None
+    else:
+        z = zipfile.ZipFile(zip_path)
         names = [n for n in z.namelist() if '/bldg/' in n and n.endswith('.gml')]
+        opener = z.open
+    try:
         wanted = [n for n in names if any(os.path.basename(n).startswith(c) for c in codes)]
         log(f'PLATEAU: bldg の gml {len(names)} 個のうち、読むのは {len(wanted)} 個')
+        if names and not wanted:
+            log('PLATEAU: 範囲にかかるメッシュの gml が見つかりません（別の区のデータではないか確認してください）')
         for n in wanted:
             t0 = time.time()
-            with z.open(n) as f:
+            with opener(n) as f:
                 cnt = 0
                 for ev, el in ET.iterparse(f, events=('end',)):
                     if el.tag == '{%s}Building' % NS['bldg']:
@@ -210,6 +230,9 @@ def read_plateau(zip_path, bb, proj, log=print):
                             out.append(bd); cnt += 1
                         el.clear()
             log(f'  {os.path.basename(n)}: {cnt} 棟（{time.time() - t0:.1f}秒）')
+    finally:
+        if z:
+            z.close()
     return out
 
 
@@ -267,7 +290,19 @@ def selftest():
     finally:
         os.remove(tmp)
     assert len(out) == 2, len(out)
-    print('selftest OK（メッシュ計算・CityGML の読み取り・zip の流れ）')
+    # 展開済みフォルダを読む流れ
+    import tempfile, shutil
+    d = tempfile.mkdtemp()
+    try:
+        os.makedirs(os.path.join(d, 'udx', 'bldg'))
+        for fn in ('53394526_bldg_6697_op.gml', '99999999_bldg_6697_op.gml'):
+            with open(os.path.join(d, 'udx', 'bldg', fn), 'w', encoding='utf-8') as f:
+                f.write(SAMPLE_GML)
+        out = read_plateau(d, bb, proj, log=lambda *a: None)
+    finally:
+        shutil.rmtree(d)
+    assert len(out) == 2, len(out)
+    print('selftest OK（メッシュ計算・CityGML の読み取り・zip とフォルダの流れ）')
 
 
 def main():
@@ -286,9 +321,14 @@ def main():
     out = {'center_lonlat': center, 'half_m': a.half, 'bbox_swne': bb, 'made': time.strftime('%Y-%m-%d'),
            'sources': ['© OpenStreetMap contributors（ODbL）', '国土交通省 Project PLATEAU 3D都市モデル（CC BY 4.0 等）'],
            'roads': [], 'rails': [], 'osm_buildings': [], 'green': [], 'stations': [], 'plateau_buildings': []}
+    if a.plateau and not os.path.exists(a.plateau):
+        print(f'PLATEAU のファイルが見つかりません: {a.plateau}'); sys.exit(1)
     if not a.no_osm:
         print('OpenStreetMap（Overpass）から取得中…（1〜3分かかることがあります）')
-        osm = overpass(bb)
+        try:
+            osm = overpass(bb)
+        except Exception as e:  # noqa
+            print(f'\n{e}\nネット接続を確かめて、少し待ってからもう一度実行してください。'); sys.exit(1)
         roads, rails, bld, green, stations = osm_to_layers(osm, proj)
         out['roads'], out['rails'], out['osm_buildings'], out['green'], out['stations'] = roads, rails, bld, green, stations
         withh = sum(1 for b in bld if b['h'] or b['levels'])
