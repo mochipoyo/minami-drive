@@ -75,45 +75,72 @@ def meshes_in(bb):
 OVERPASS_URLS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']
 
 
-def overpass(bb, timeout=180):
-    s, w, n, e = bb
-    q = f"""[out:json][timeout:{timeout}];
-(
-  way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|service|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link)$"]({s},{w},{n},{e});
-  way["railway"~"^(rail|subway|light_rail|monorail)$"]({s},{w},{n},{e});
-  way["building"]({s},{w},{n},{e});
-  relation["building"]({s},{w},{n},{e});
-  node["railway"="station"]({s},{w},{n},{e});
-  way["landuse"~"^(grass|forest|cemetery)$"]({s},{w},{n},{e});
-  way["leisure"~"^(park|garden)$"]({s},{w},{n},{e});
-);
-(._;>;);
-out body;"""
+def overpass_query(body, timeout=90, log=print):
+    """Overpass に1つの問い合わせを送る。混んでいたら別のサーバーで、少し待って再試行"""
+    q = f"[out:json][timeout:{timeout}];({body});(._;>;);out body;"
     data = urllib.parse.urlencode({'data': q}).encode()
     last = None
-    for attempt, url in enumerate(OVERPASS_URLS * 2):  # 混んでいたら別のサーバーで、少し待って再試行
+    tries = OVERPASS_URLS * 3
+    for attempt, url in enumerate(tries):
         try:
             req = urllib.request.Request(url, data=data, headers={'User-Agent': 'minami-drive-extract/1.0'})
-            with urllib.request.urlopen(req, timeout=timeout + 60) as r:
+            with urllib.request.urlopen(req, timeout=timeout + 30) as r:
                 return json.load(r)
         except Exception as e:  # noqa
             last = e
-            print(f'  取得に失敗（{url.split("/")[2]}）: {str(e)[:80]}')
-            if attempt < len(OVERPASS_URLS) * 2 - 1:
-                time.sleep(20)
+            log(f'  取得に失敗（{url.split("/")[2]}）: {str(e)[:80]}')
+            if attempt < len(tries) - 1:
+                wait = 15 + 15 * (attempt // len(OVERPASS_URLS))
+                log(f'  {wait} 秒待って再試行します…')
+                time.sleep(wait)
     raise RuntimeError(f'OpenStreetMap（Overpass）から取得できませんでした: {last}')
+
+
+HIGHWAYS = 'motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|service|motorway_link|trunk_link|primary_link|secondary_link|tertiary_link'
+
+
+def split_bbox(bb, n):
+    """bbox（s,w,n,e）を n×n のタイルに分ける（建物の問い合わせを軽くするため）"""
+    s, w, nn, e = bb
+    out = []
+    for i in range(n):
+        for j in range(n):
+            out.append((s + (nn - s) * i / n, w + (e - w) * j / n, s + (nn - s) * (i + 1) / n, w + (e - w) * (j + 1) / n))
+    return out
+
+
+def overpass(bb, buildings=True, log=print):
+    """道路・鉄道・駅・緑地はひとつの軽い問い合わせで。建物（重い）は必要なときだけ、タイルに分けて取る"""
+    s, w, n, e = bb
+    B = f'({s},{w},{n},{e})'
+    log('  道路・鉄道・駅・緑地を取得中…')
+    res = overpass_query(f'way["highway"~"^({HIGHWAYS})$"]{B};way["railway"~"^(rail|subway|light_rail|monorail)$"]{B};'
+                         f'node["railway"="station"]{B};way["landuse"~"^(grass|forest|cemetery)$"]{B};way["leisure"~"^(park|garden)$"]{B};', log=log)
+    elements = list(res['elements'])
+    if buildings:
+        tiles = split_bbox(bb, 2)
+        for i, (ts, tw, tn, te) in enumerate(tiles):
+            log(f'  建物を取得中…（{i + 1}/{len(tiles)}）')
+            r = overpass_query(f'way["building"]({ts},{tw},{tn},{te});', timeout=120, log=log)
+            elements += r['elements']
+    return {'elements': elements}
 
 
 def osm_to_layers(osm, proj):
     nodes = {el['id']: (el['lon'], el['lat']) for el in osm['elements'] if el['type'] == 'node'}
     roads, rails, bld, green, stations = [], [], [], [], []
+    seen = set()
     for el in osm['elements']:
         t = el.get('tags', {})
         if el['type'] == 'node' and t.get('railway') == 'station':
+            if ('n', el['id']) in seen:
+                continue
+            seen.add(('n', el['id']))
             stations.append({'name': t.get('name', ''), 'xz': proj(el['lon'], el['lat'])})
             continue
-        if el['type'] != 'way':
+        if el['type'] != 'way' or ('w', el['id']) in seen:
             continue
+        seen.add(('w', el['id']))
         pts = [proj(*nodes[n]) for n in el['nodes'] if n in nodes]
         if len(pts) < 2:
             continue
@@ -302,7 +329,19 @@ def selftest():
     finally:
         shutil.rmtree(d)
     assert len(out) == 2, len(out)
-    print('selftest OK（メッシュ計算・CityGML の読み取り・zip とフォルダの流れ）')
+    # タイル分割と、タイルの境で二重に返る way の重複除去
+    tiles = split_bbox(bb, 2)
+    assert len(tiles) == 4 and abs(tiles[0][0] - bb[0]) < 1e-9 and abs(tiles[3][2] - bb[2]) < 1e-9 and abs(tiles[0][2] - tiles[3][0]) < 1e-9, tiles
+    osm = {'elements': [{'type': 'node', 'id': 1, 'lon': 139.70, 'lat': 35.69}, {'type': 'node', 'id': 2, 'lon': 139.701, 'lat': 35.69},
+                        {'type': 'node', 'id': 3, 'lon': 139.701, 'lat': 35.691},
+                        {'type': 'way', 'id': 10, 'nodes': [1, 2], 'tags': {'highway': 'primary', 'name': '甲州街道'}},
+                        {'type': 'way', 'id': 20, 'nodes': [1, 2, 3], 'tags': {'building': 'yes', 'height': '30'}},
+                        {'type': 'node', 'id': 1, 'lon': 139.70, 'lat': 35.69}, {'type': 'node', 'id': 2, 'lon': 139.701, 'lat': 35.69},
+                        {'type': 'way', 'id': 20, 'nodes': [1, 2, 3], 'tags': {'building': 'yes', 'height': '30'}},
+                        {'type': 'node', 'id': 5, 'lon': 139.7005, 'lat': 35.6905, 'tags': {'railway': 'station', 'name': '新宿'}}]}
+    roads, rails, bld, green, stations = osm_to_layers(osm, proj)
+    assert len(roads) == 1 and roads[0]['name'] == '甲州街道' and len(bld) == 1 and bld[0]['h'] == '30' and len(stations) == 1, (roads, bld, stations)
+    print('selftest OK（メッシュ計算・CityGML の読み取り・zip とフォルダの流れ・OSM の分割と重複除去）')
 
 
 def main():
@@ -312,6 +351,7 @@ def main():
     ap.add_argument('--center', default=f'{CENTER[0]},{CENTER[1]}')
     ap.add_argument('--half', type=float, default=900)
     ap.add_argument('--no-osm', action='store_true')
+    ap.add_argument('--osm-buildings', action='store_true', help='PLATEAU があっても OpenStreetMap の建物も取る（重い）')
     ap.add_argument('--selftest', action='store_true')
     a = ap.parse_args()
     if a.selftest:
@@ -325,8 +365,11 @@ def main():
         print(f'PLATEAU のファイルが見つかりません: {a.plateau}'); sys.exit(1)
     if not a.no_osm:
         print('OpenStreetMap（Overpass）から取得中…（1〜3分かかることがあります）')
+        want_b = a.osm_buildings or not a.plateau
+        if not want_b:
+            print('  建物は PLATEAU から取るので、OpenStreetMap の建物は取りません（--osm-buildings で取れます）')
         try:
-            osm = overpass(bb)
+            osm = overpass(bb, buildings=want_b)
         except Exception as e:  # noqa
             print(f'\n{e}\nネット接続を確かめて、少し待ってからもう一度実行してください。'); sys.exit(1)
         roads, rails, bld, green, stations = osm_to_layers(osm, proj)

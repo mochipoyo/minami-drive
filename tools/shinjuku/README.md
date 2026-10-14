@@ -40,7 +40,8 @@ python3 extract_area.py --plateau <zipのパス> --out shinjuku.json   # PLATEAU
 Windows：エクスプローラーでそのフォルダを開き、上のアドレス欄に `cmd` と打って Enter（黒い画面が出ます）。続けて上と同じコマンドを、`python3` の代わりに `py` で打ちます（例：`py extract_area.py --plateau 13104_shinjuku-ku_pref_2025_citygml_1_op.zip --out shinjuku.json`）。
 
 - 中心は新宿駅（139.7005, 35.6905）、範囲は中心から 900 m（約 1.8 km 四方）です。`--center` `--half` で変えられます。
-- Overpass API は混んでいると数分かかったり、失敗したりします。失敗したら自動で別のサーバーに切り替えて再試行します。それでもだめなら少し待って再実行してください。
+- Overpass API は混んでいると失敗します（`HTTP Error 504` など）。失敗したら自動で別のサーバーに切り替え、少し待って再試行します（最大6回、合計3分ほど）。それでもだめなら時間をおいて再実行してください。
+- PLATEAU の zip があるときは、建物は PLATEAU から取り、OpenStreetMap からは道路・鉄道・駅・緑地だけを取ります（軽い問い合わせになります）。OpenStreetMap の建物も欲しいときは `--osm-buildings` を付けます。
 - 画面に「OSM: 道路 … 本、建物 … 棟（高さか階数のタグあり … 棟）」「PLATEAU: 建物 … 棟」と出ます。
 
 ## 3. 送るもの
