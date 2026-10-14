@@ -121,7 +121,7 @@ function boot(data){
   if(typeof THREE==='undefined'){bootFail('three');return;}
   if(!webglOK()){bootFail('webgl');return;}
   const coarse=matchMedia('(pointer:coarse)').matches;const small=Math.min(screen.width,screen.height)<900;const q=SETTINGS.quality!=='auto'?SETTINGS.quality:(coarse&&small?'low':coarse?'mid':'high');
-  try{scene=new THREE.Scene();initGeo();makeMaterials();modelMats(null);signalMats();initRenderer(q);
+  try{scene=new THREE.Scene();initGeo();makeMaterials();modelMats(null);signalMats();visualEnhance(q);initRenderer(q);
     skyMesh=buildSky();buildRain();PERSIST.push(hemi,sun,sun.target,skyMesh,rainMesh,cockpit);
     makePlayer();PERSIST.push(PLAYER.model.grp,PLAYER.headL,PLAYER.headL.target);PLAYER.model.grp.visible=false;
     loadMap('town');setEnv('day');}
@@ -132,13 +132,13 @@ function boot(data){
   VOICE.on=SETTINGS.voice;buildControls();bindKeys();applyTouch();resizeView();window.addEventListener('resize',()=>{resizeView();applyMirrors();});
   $('btnPause').onclick=togglePause;$('btnCam').onclick=toggleView;$('btnSound').onclick=()=>{SETTINGS.sound=!SETTINGS.sound;SFX.init();SFX.setOn(SETTINGS.sound);store('mdk_settings',SETTINGS);toast('info',SETTINGS.sound?'サウンド オン':'サウンド オフ',0,'');};
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&STAGE.running&&!STAGE.paused&&!STAGE.over)togglePause();});
-  $('loadMsg').hidden=true;showMenu();requestAnimationFrame(frame);
+  $('loadMsg').hidden=true;showMenu();requestAnimationFrame(frame);carAssetsStart();// 車の3Dモデルは起動後に裏で読み込む（04b）
   window.__sim={STAGE,J,VEH,PEDS,SIGS,XINGS,XWALKS,NET,NAV,EVS,KEY,INPUT,startStage,act,locate,loadMap,
     step(n,dt=1/30){for(let i=0;i<n;i++){if(!STAGE.paused)simStep(dt);}if(STAGE.running){placeCams(dt);hudT=0;updateHud(dt);}},
     render(){if(STAGE.running){placeCams(0.016);cockpit.visible=viewMode==='cockpit';}renderPeds(0);CULL.t=3;cullTick();renderAll(STAGE.running&&viewMode==='cockpit'&&SETTINGS.mirrors);},
     renderAt(P,T){cockpit.visible=false;renderer.setRenderTarget(null);renderer.setScissorTest(false);renderer.setViewport(0,0,window.innerWidth,window.innerHeight);camera.position.set(P[0],P[1],P[2]);camera.lookAt(T[0],T[1],T[2]);renderPeds(0);if(skyMesh)skyMesh.position.set(camera.position.x,0,camera.position.z);sun.position.set(P[0]+80,(P[1]||0)+120,P[2]+50);sun.target.position.set(T[0],T[1],T[2]);renderer.render(scene,camera);},
     setView(m){viewMode=m;applyMirrors();},setEnv(m){setEnv(m);},get P(){return PLAYER;},get J2(){return J;},renderer:()=>renderer,camera:()=>camera,scene:()=>scene,dbgB:{BUILT,clearOfRoads,overlapsBuilt,CITYB:typeof CITYB!=='undefined'?CITYB:null},
-    SIGNS:()=>SIGNDATA,signCanvas:(id,px)=>signCanvas(id,px),signMissing:()=>signArtMissing(),auto(on,opts){AUTO.on=!!on;AUTO.agent=null;Object.assign(AUTO,opts||{});if(!on)INPUT.auto=null;},AUTO,STAGES,MAPS,dbg:()=>autoDbg(),planner:(l)=>autoPlanner(l),answer:()=>choiceAnswerOK(),dev:{locateDbg,isDrivable,drvAt,drvProject,corners,inNode,connAt,locate,makeDrivePath,obstAhead,laneGapAt,nearHazards,leaderOnPath,wantsExit,wantedDecel,tryLaneChange,parkTarget:()=>typeof PARK!=='undefined'&&PARK.target?{x:PARK.target.x,z:PARK.target.z,za:PARK.target.za,zb:PARK.target.zb}:null,streetParkJudge:()=>streetParkJudge(),PK:()=>JSON.parse(JSON.stringify(PK,(k,v)=>typeof v==='function'||(v&&v.var)?undefined:v))}};}
+    carAssets:()=>({state:CARASSET.state,loaded:CARASSET.loaded,errors:CARASSET.errors,ready:carAssetsReady()}),SIGNS:()=>SIGNDATA,signCanvas:(id,px)=>signCanvas(id,px),signMissing:()=>signArtMissing(),auto(on,opts){AUTO.on=!!on;AUTO.agent=null;Object.assign(AUTO,opts||{});if(!on)INPUT.auto=null;},AUTO,STAGES,MAPS,dbg:()=>autoDbg(),planner:(l)=>autoPlanner(l),answer:()=>choiceAnswerOK(),dev:{locateDbg,isDrivable,drvAt,drvProject,corners,inNode,connAt,locate,makeDrivePath,obstAhead,laneGapAt,nearHazards,leaderOnPath,wantsExit,wantedDecel,tryLaneChange,parkTarget:()=>typeof PARK!=='undefined'&&PARK.target?{x:PARK.target.x,z:PARK.target.z,za:PARK.target.za,zb:PARK.target.zb}:null,streetParkJudge:()=>streetParkJudge(),PK:()=>JSON.parse(JSON.stringify(PK,(k,v)=>typeof v==='function'||(v&&v.var)?undefined:v))}};}
 // フォントを待ってから起動（標識の文字のため）。フォントのCSSは起動を止めないよう media="print" で読み込んでいる（src/head.html）。
 // CSSは最大5秒待ち、読み込めたら画面にも使う。フォント本体はそのあと最大2.5秒待つ。間に合わなければフォントなしで起動する
 function fontCssReady(ms){const l=document.getElementById('fontCss');return new Promise(res=>{if(!l){res();return;}

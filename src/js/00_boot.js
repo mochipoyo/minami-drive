@@ -29,5 +29,8 @@ function sysNotice(kind,detail){const n=document.getElementById('sysNotice');if(
 // 実行中の予期しないエラー：このページと three.js のエラーだけを対象にし、1回だけ知らせる（拡張機能などのエラーは除く）
 let SYS_ERR=false;
 window.addEventListener('error',(e)=>{if(SYS_ERR||!e)return;const f=String(e.filename||'');const here=location.href.split('#')[0];
-  if(!(f.split('#')[0]===here||/three(\.min)?\.js/.test(f)))return;SYS_ERR=true;try{sysNotice('error',e.message);}catch(x){}});
+  if(!(f.split('#')[0]===here||/three(\.min)?\.js/.test(f)))return;
+  // 3D表示が中断（WebGL コンテキストの喪失）している間のエラーは、中断のお知らせだけにする（three.js r128 は、中断中に描画の部品を作ると例外になる）
+  try{if(typeof renderer!=='undefined'&&renderer&&renderer.getContext().isContextLost())return;}catch(x){}
+  SYS_ERR=true;try{sysNotice('error',e.message);}catch(x){}});
 if(typeof THREE==='undefined'){bootFail('three');return;}

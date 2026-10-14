@@ -59,6 +59,7 @@ export default async function ({ browser, url, rep }) {
   {
     const { ctx, page, errors } = await openPage(browser, url);
     await waitMenu(page);
+    await page.waitForFunction(() => !window.__sim.carAssets || window.__sim.carAssets().ready, null, { timeout: 60000 }).catch(() => {});// 車の3Dモデルの読み込みが終わってから（読み込みの途中と中断が重ならないように）
     await startStage(page, 's1', { hold: false });
     await page.waitForTimeout(800);
     await page.evaluate(() => { window.__lc = window.__sim.renderer().getContext().getExtension('WEBGL_lose_context'); window.__lc.loseContext(); });

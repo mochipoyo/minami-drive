@@ -1,0 +1,12 @@
+{
+  "name": "minami-drive-car-tools",
+  "version": "1.0.0",
+  "description": "車の3Dモデルの生成・圧縮（公開用の index.html には含まれません）",
+  "scripts": {
+    "build": "./build.sh"
+  },
+  "dependencies": {
+    "gltfpack": "^0.24.0"
+  },
+  "private": true
+}

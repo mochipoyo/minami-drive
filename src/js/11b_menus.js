@@ -67,8 +67,9 @@ function showHelp(back){const touch=isTouch();
 function showSettings(back){const row=(id,label,val)=>`<label class="opt" for="${id}"><span>${label}</span><input type="checkbox" id="${id}" ${val?'checked':''}></label>`;
   ov(`<div class="card"><header><h2>設定</h2></header><div class="body">${row('sSound','効果音',SETTINGS.sound)}${row('sVoice','教官の音声案内（ブラウザの読み上げ）',SETTINGS.voice)}${row('sMir','ミラーを表示',SETTINGS.mirrors)}${row('sSide','狭い画面でもサイドミラーを表示',SETTINGS.sideOnPhone)}${row('sCam','バックモニター（シフトがRのとき）',SETTINGS.rearCam!==false)}${row('sShadow','影（再読み込み後に反映）',SETTINGS.shadow)}
     <label class="opt" for="sTouch"><span>タッチ操作パネル</span><select id="sTouch"><option value="auto">自動</option><option value="on">表示</option><option value="off">非表示</option></select></label>
-    <div class="btnRow"><button class="go" id="bOk">保存してもどる</button></div></div></div>`);$('sTouch').value=SETTINGS.touch;
-  $('bOk').onclick=()=>{SETTINGS.sound=$('sSound').checked;SETTINGS.voice=$('sVoice').checked;SETTINGS.mirrors=$('sMir').checked;SETTINGS.sideOnPhone=$('sSide').checked;SETTINGS.rearCam=$('sCam').checked;SETTINGS.shadow=$('sShadow').checked;SETTINGS.touch=$('sTouch').value;
+    <label class="opt" for="sQual"><span>画質（再読み込み後に反映）<br><small style="font-weight:400;color:#4d5d55">動きが重いときは「低」に。「高」は路面の凹凸・塗装のつや・雲・影つき</small></span><select id="sQual"><option value="auto">自動</option><option value="high">高</option><option value="mid">中</option><option value="low">低</option></select></label>
+    <div class="btnRow"><button class="go" id="bOk">保存してもどる</button></div></div></div>`);$('sTouch').value=SETTINGS.touch;$('sQual').value=SETTINGS.quality||'auto';
+  $('bOk').onclick=()=>{SETTINGS.sound=$('sSound').checked;SETTINGS.voice=$('sVoice').checked;SETTINGS.mirrors=$('sMir').checked;SETTINGS.sideOnPhone=$('sSide').checked;SETTINGS.rearCam=$('sCam').checked;SETTINGS.shadow=$('sShadow').checked;SETTINGS.touch=$('sTouch').value;SETTINGS.quality=$('sQual').value;
     store('mdk_settings',SETTINGS);SFX.setOn(SETTINGS.sound);VOICE.on=SETTINGS.voice;applyTouch();applyMirrors();back();};}
 function showAbout(){ov(`<div class="card"><header><h2>このゲームについて</h2></header><div class="body">
   <p class="lede">交通ルールの説明は、2026年10月時点で確認できた法令・公的機関の情報をもとにしています。法令は改正されることがあるため、実際の運転では道路標識・標示、警察官の指示、最新の公式情報に従ってください。</p>
