@@ -54,7 +54,8 @@ function judgeUpdate(dt){const p=PLAYER;if(!p||STAGE.over)return;J.t+=dt;const f
   // 交差点の中
   if(q&&q.kind==='node'){const n=q.node;
     if(!J.N||J.N.n!==n){const A=J.A;const fromLeg=A&&A.n===n?A.L:null;const el=A&&A.n===n?(A.laneAtLine||A.lane):null;
-      J.N={n,L:fromLeg,h0:fromLeg?legHeading[fromLeg]:p.h,blink:A&&A.n===n?{side:A.blinkSide,dist:A.blinkDist,d0:A.d0}:{side:p.blink,dist:0},entryGap:J.lastLeftGap!==undefined?J.lastLeftGap:0,entryRoad:A?A.road:null,entryDir:A?A.dir:0,
+      let h0=fromLeg?legHeading[fromLeg]:p.h;if(n.poly&&A&&A.n===n&&A.road){const rr=A.road;const P0=rr.at(A.dir>0?rr.len:0);h0=A.dir>0?P0.h:wrapA(P0.h+Math.PI);}// 多角形の交差点：道路の実際の向き（斜めに入る）
+      J.N={n,L:fromLeg,h0,blink:A&&A.n===n?{side:A.blinkSide,dist:A.blinkDist,d0:A.d0}:{side:p.blink,dist:0},entryGap:J.lastLeftGap!==undefined?J.lastLeftGap:0,entryRoad:A?A.road:null,entryDir:A?A.dir:0,
         entryLane:el,maxV:0,prog45:null,lineSt:A?A.lineSt:null,v0:p.v,stopT:0};blindCheck(n,J.N,p);}
     const N=J.N;N.maxV=Math.max(N.maxV,Math.abs(p.v));const dh=wrapA(p.h-N.h0);
     if(N.prog45===null&&dh>Math.PI/4){const ef=fwd(N.h0);N.prog45=(p.x-n.x)*ef.x+(p.z-n.z)*ef.z;}
@@ -71,7 +72,9 @@ function obstacleAheadLeft(p,dist){const f=fwd(p.h),r=rightV(p.h);for(const o of
   return!!(AMB&&AMB.active&&Math.hypot(AMB.x-p.x,AMB.z-p.z)<60);}
 function blindCheck(n,N,p){if(n.signal||n.fil.length===0)return;const legs=Object.keys(n.legs);if(legs.length<3)return;
   const res=legs.every(L=>n.legs[L].road.type==='RES');if(!res||!N.L)return;if(n.stopLegs.includes(N.L))return;if(n.priority)return;if(Math.abs(p.v)*KMH>15)violate('blind',`進入速度 ${Math.round(Math.abs(p.v)*KMH)}km/h`);}
-function nodeExit(N,p){if(!N.L||p.v<0)return;const turn=turnOf(N.h0,p.h);const n=N.n;
+function nodeExit(N,p){if(!N.L||p.v<0)return;const n=N.n;let turn;
+  if(n.poly&&p.loc&&p.loc.kind==='road'&&p.loc.lane){const l=p.loc.lane;const r2=l.road;const L2=r2.startNode===n?r2.startLeg:r2.endNode===n?r2.endLeg:null;turn=polyTurn(n,N.L,L2,N.h0,l.pos(0).h);}// 多角形の交差点：出た道路の向きと脚で判定（02h）
+  else turn=turnOf(N.h0,p.h);
   if(n.noTurn&&n.noTurn[N.L]&&n.noTurn[N.L].includes(turn))violate('dirBan',turn==='R'?'この交差点は、さくら通りから右折できません（直進・左折のみ）。':'');
   if(turn==='L'||turn==='R'){const b=N.blink;if(b.side!==turn){if(b.side)violate('blink','曲がる方向と逆の合図でした。');else violate('blink',turn==='L'?'左折の合図が出ていませんでした。':'右折の合図が出ていませんでした。');}
     else if(b.dist<Math.min(24,(b.d0||99)*0.6))violate('blinkLate',`合図を出したのは交差点の約${Math.max(0,Math.round(b.dist))}m手前でした。`);

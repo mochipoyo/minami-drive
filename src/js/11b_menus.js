@@ -14,7 +14,7 @@ function ov(html){const o=$('ov');o.innerHTML=html;o.hidden=false;o.scrollTop=0;
 function closeOv(){$('ov').hidden=true;$('ov').innerHTML='';}
 const esc=(s)=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 // メニューのカテゴリ（タブ）
-const MENU_CATS=[{k:'town',t:'一般道',sub:'みなみ町'},{k:'city',t:'都会',sub:'さくら区'},{k:'exp',t:'高速道路',sub:'みなみ自動車道'},{k:'aori',t:'あおり運転',sub:'受けたら・しない'},{k:'park',t:'駐車',sub:'車庫入れ・縦列'},{k:'sign',t:'標識',sub:'コース・図鑑'},{k:'free',t:'自由走行',sub:'採点なし'}];
+const MENU_CATS=[{k:'town',t:'一般道',sub:'みなみ町'},{k:'city',t:'都会',sub:'さくら区'},{k:'tokyo',t:'東京',sub:'新宿駅周辺'},{k:'exp',t:'高速道路',sub:'みなみ自動車道'},{k:'aori',t:'あおり運転',sub:'受けたら・しない'},{k:'park',t:'駐車',sub:'車庫入れ・縦列'},{k:'sign',t:'標識',sub:'コース・図鑑'},{k:'free',t:'自由走行',sub:'採点なし'}];
 function menuCat(){const c=store('mdk_tab');return MENU_CATS.some(x=>x.k===c&&STAGES.some(s=>s.cat===x.k)||x.k===c&&x.k==='sign')?c:'town';}
 function showMenu(cat){STAGE.running=false;STAGE.menu=true;$('hud').hidden=true;applyMirrors();$('eew').hidden=true;$('phone').hidden=true;
   cat=(typeof cat==='string'&&cat)||menuCat();const cats=MENU_CATS.filter(c=>STAGES.some(s=>s.cat===c.k)||(c.k==='sign'&&typeof showSignBook==='function'));
@@ -88,7 +88,7 @@ function showResult(extra){const s=STAGES[STAGE.idx];const pass=J.score>=70&&!J.
   const prec=extra&&extra.prec!==undefined?`<div class="small">停止位置との差 ${extra.prec.toFixed(2)}m ${extra.prec<0.5?'（ぴったり！）':''}</div>`:'';
   const checks=extra&&extra.checks?`<p class="small" style="margin-top:14px">${esc(extra.checksTitle||'確認した項目')}</p><ul class="vlist">${extra.checks.map(c=>`<li class="${c.bad?'':'good'}"><b>${c.bad?'×':'○'} ${esc(c.t)}</b>${c.law?`<span class="law">${esc(c.law)}</span>`:''}</li>`).join('')}</ul>`:'';
   const note=extra&&extra.note?`<p class="lede" style="margin-top:12px">${esc(tx(extra.note))}</p>`:'';
-  const t=Math.floor(STAGE.time);const nx=STAGES[STAGE.idx+1];const hasNext=!!nx&&!(nx.special&&!s.special);// 特殊モードへは「次の教習へ」でつなげない
+  const t=Math.floor(STAGE.time);const nx=STAGES[STAGE.idx+1];const hasNext=!!nx&&!(nx.special&&!s.special)&&!s.special;// 特殊モードへは「次の教習へ」でつなげない（特殊モードからも次へは出さない）
   const catT=(MENU_CATS.find(c=>c.k===s.cat)||{t:'教習'}).t;const no=STAGES.filter(x=>x.cat===s.cat).indexOf(s)+1;
   ov(`<div class="card"><header><div><div class="eyebrow">${esc(catT)} ・ 教習${no} の結果</div><h2>${esc(s.name)}</h2></div></header><div class="body">
     <div class="resTop">${sc?`<span class="stamp big ${pass?'':'ng'}">${pass?'合格':'不合格'}</span><div><div class="resScore">${J.score}<small>点</small></div><div class="small">走行時間 ${Math.floor(t/60)}分${t%60}秒${J.major?'・重大な違反あり':''}</div>${prec}</div>`:'<div class="small">フリー走行（採点なし）</div>'}</div>

@@ -19,7 +19,11 @@ class Signal{
   build(){const n=this.n,y=n.y||0;const SB=this.SB;this.headPos=[];
     for(const L in n.legs){const e=n.legs[L];const r=e.road;const dirIn=e.end==='end'?1:-1;if(dirIn>0?!r.nF:!r.nB)continue;// 流入がない脚（一方通行の出口）
       if(r.def.pedOnly)continue;// 歩行者用道路から入る車はない
-      const h=legHeading[L];const f=fwd(h),rt=rightV(h);const along=(L==='N'||L==='S')?n.hz:n.hx;const cross=(L==='N'||L==='S')?n.hx:n.hz;
+      let h=legHeading[L];let along=(L==='N'||L==='S')?n.hz:n.hx;let cross=(L==='N'||L==='S')?n.hx:n.hz;
+      if(n.poly){// 多角形の交差点（斜めに入る道路）：その道路の実際の向きと幅で置く
+        const P=r.at(e.end==='end'?r.len:0);h=e.end==='end'?P.h:wrapA(P.h+Math.PI);const[lo,hi]=r.tRange(e.end==='end'?r.len:0);cross=Math.max(Math.abs(lo),Math.abs(hi));
+        along=polyRayDist(n.poly,n.x,n.z,h);}
+      const f=fwd(h),rt=rightV(h);
       const far=along+(n.xwalk[OPP[L]]?n.xwW+1.6:1.6);const nL=r.lanes(dirIn).length+(r.patches.some(p=>p.kind==='turnR'&&p.dir===dirIn)?1:0);
       const mk=(sideSign,lat)=>{const px=n.x+f.x*far+rt.x*sideSign*(cross+1.1),pz=n.z+f.z*far+rt.z*sideSign*(cross+1.1);const hx=n.x+f.x*far+rt.x*lat,hz=n.z+f.z*far+rt.z*lat;
         SB.cyl('def',px,y+3.1,pz,0.13,6.2,0x8f949a,8);SB.bar('def',px,y+5.75,pz,hx,y+5.75,hz,0.11,0.11,0x8f949a);

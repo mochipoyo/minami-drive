@@ -7,7 +7,7 @@ function autoPlanner(l){if(STAGE.autoPlan){const t=STAGE.autoPlan(l);if(t)return
   const n=l.endNode();if(!n||n.kind!=='x')return null;const G=NAV.goal;
   if(!NAV.wps.length&&!(G&&G.road)){// 行き先なし（自由走行）：地図の外に出る道は選ばない
     const moves=movesFrom(l);const ok=[...moves.keys()].filter(t=>{const c=moves.get(t)[0];const r2=c.next.road;const far=c.next.dir>0?r2.endNode:r2.startNode;return t!=='U'&&far&&far.kind!=='portal';});return ok.length?pick(ok):null;}
-  const path=navPath(n,l.inLeg);if(!path)return null;let ex=path.length>=2?legTo(n,path[1]):path.exitLeg;if(!ex)return null;return turnOf(legHeading[l.inLeg],outHeading[ex]);}
+  const path=navPath(n,l.inLeg);if(!path)return null;let ex=path.length>=2?legTo(n,path[1]):path.exitLeg;if(!ex)return null;return legTurn(n,l.inLeg,ex);}
 function autoCancelLc(a){const c=a.lc;if(!c)return;const s=a.lane.sOf(a.u);const f=c.from;if(f&&f.road===a.lane.road){a.lane=f;a.u=clamp(f.uOf(s),0,f.len);a.d=0;}a.lc=null;AUTO.lastLc=null;}
 function autoSetLane(a,l,keepD){if(!a.lane||a.lane.road!==l.road)a.planTurn=null;a.lane=l;a.next=null;a.lc=null;if(!keepD)a.d=0;else a.d=clamp(a.d,-l.w/2,l.w/2);a.stopDone=false;a.xingDone=false;a.wait=0;}
 function autoSync(){const p=PLAYER,a=AUTO.agent;a.v=Math.max(0,p.v);a.x=p.x;a.z=p.z;a.h=p.h;a.y=p.y;const q=p.loc;
