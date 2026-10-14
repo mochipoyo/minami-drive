@@ -82,6 +82,7 @@ GitHub Free では、Pages を使えるのは Public のリポジトリだけで
 index.html      公開用のゲーム本体（これ1つで動きます。assets/ があると車が3Dモデルになります）
 assets/cars/    車の3Dモデル（glb。meshopt で圧縮。tools/cars で生成）
 assets/lib/     3Dモデルの読み込み部品（three.js r128 の GLTFLoader と meshopt のデコーダー）
+assets/ogp.jpg  SNS で共有したときに出る画像（OGP / Twitter Card。1200×630。差し替えたら build.py の OGP_VER を上げる）
 assets/maps/    東京・新宿駅周辺の地図データ（道路網・建物・線路・緑地。tools/shinjuku で生成。約1MB、起動後に裏で読み込み）
 build.py        src/ から index.html を作るスクリプト
 src/head.html   画面の部品と見た目（CSS）
