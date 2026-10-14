@@ -134,8 +134,9 @@ function netBuild(def){netReset();
   const later=[];
   for(const rd of def.roads){const r=new Road(rd);if(typeof rd.path==='function'){later.push(r);continue;}let pts=pathSamples(rd);
     // 交差点の中心から始まる（終わる）道路：脚の向きを決める
-    if(rd.from){const n=NET.nodeById[rd.from];const a=pts[0],b=pts[1];const L=legOfDir(b.x-a.x,b.z-a.z);r.startNode=n;r.startLeg=L;n.legs[L]={road:r,end:'start'};}
-    if(rd.to){const n=NET.nodeById[rd.to];const a=pts[pts.length-1],b=pts[pts.length-2];const L=legOfDir(b.x-a.x,b.z-a.z);r.endNode=n;r.endLeg=L;n.legs[L]={road:r,end:'end'};}
+    // 脚の方角：地図データで指定があればそれ（斜めに入る道路のある地図）。なければ最初の区間の向きから
+    if(rd.from){const n=NET.nodeById[rd.from];const a=pts[0],b=pts[1];const L=rd.leg0||legOfDir(b.x-a.x,b.z-a.z);r.startNode=n;r.startLeg=L;n.legs[L]={road:r,end:'start'};}
+    if(rd.to){const n=NET.nodeById[rd.to];const a=pts[pts.length-1],b=pts[pts.length-2];const L=rd.leg1||legOfDir(b.x-a.x,b.z-a.z);r.endNode=n;r.endLeg=L;n.legs[L]={road:r,end:'end'};}
     pend.push([r,pts]);}
   // 交差点の大きさ
   for(const n of NET.nodes){if(n.kind!=='x')continue;let hx=0,hz=0;
@@ -145,6 +146,7 @@ function netBuild(def){netReset();
   // 道路の端を交差点の縁で切る
   for(const[r,pts]of pend){let a=0,b=0;if(r.startNode&&r.startNode.kind==='x')a=(r.startLeg==='N'||r.startLeg==='S')?r.startNode.hz:r.startNode.hx;
     if(r.endNode&&r.endNode.kind==='x')b=(r.endLeg==='N'||r.endLeg==='S')?r.endNode.hz:r.endNode.hx;
+    if(r.def.cut0!==undefined)a=r.def.cut0;if(r.def.cut1!==undefined)b=r.def.cut1;// 切る長さの指定（多角形の交差点）
     r.sample(pts);if(a||b){const S=r.S;const s0=a,s1=r.len-b;const keep=[];const A=r.at(s0),B=r.at(s1);keep.push({x:A.x,z:A.z});for(let i=0;i<S.length;i++)if(S[i]>s0+0.05&&S[i]<s1-0.05)keep.push({x:r.X[i],z:r.Z[i]});keep.push({x:B.x,z:B.z});r.sample(keep);}
     // 高さ
     const d=r.def;const y0=r.startNode?r.startNode.y||0:(d.y0||0),y1=r.endNode?r.endNode.y||0:(d.y1!==undefined?d.y1:y0);
@@ -166,6 +168,8 @@ function netBuild(def){netReset();
       r.Y=r.S.map(s2=>{let i=0;while(i<pr.length-2&&pr[i+1][0]<s2)i++;const a=pr[i],b=pr[i+1];return lerp(a[1],b[1],smooth((s2-a[0])/((b[0]-a[0])||1)));});}
     for(let i=0;i<r.nF;i++)r.lanesF.push(new Lane(r,1,i));for(let i=0;i<r.nB;i++)r.lanesB.push(new Lane(r,-1,i));for(const p of(d.patches||[]))addPatch(r,p);
     for(const L of r.lanesF.concat(r.lanesB))if(d.laneLimit)L.limitV=d.laneLimit/KMH;}
+  // 多角形の交差点（斜めに道路が入る地図）：切ったあとの道路の端から形を作る（02h）
+  for(const n of NET.nodes)if(n.kind==='x'&&n.polyAuto)nodePolyBuild(n);
   for(const n of NET.nodes)if(n.kind==='x')nodeSetup(n,def);
   // 直結（ランプ→加速車線、減速車線→ランプ、道路→道路）
   for(const lk of def.links||[]){const[ra,ka,ia,rb,kb,ib]=lk;const A=findLane(NET.byId[ra],ka,ia),B=findLane(NET.byId[rb],kb,ib);if(A&&B){A.next.push({lane:B});B.prev.push({lane:A});}}
@@ -179,8 +183,8 @@ function nodeSetup(n,def){const legs=Object.keys(n.legs);
   const xw=n.xwalkDef!==undefined?n.xwalkDef:(n.signal?true:false);
   for(const L of legs){if(xw===true||(Array.isArray(xw)&&xw.includes(L)))n.xwalk[L]=true;}
   n.xwW=n.xwW||(legs.some(L=>n.legs[L].road.type==='ART')?5:4);
-  // 隅切り
-  for(const sx of[-1,1])for(const sz of[-1,1]){const hL=sx>0?'E':'W',vL=sz>0?'S':'N';
+  // 隅切り（多角形の交差点では形に含めてあるので作らない）
+  if(!n.poly)for(const sx of[-1,1])for(const sz of[-1,1]){const hL=sx>0?'E':'W',vL=sz>0?'S':'N';
     if(n.legs[hL]&&n.legs[vL]){const ta=n.legs[hL].road.type,tb=n.legs[vL].road.type;const both=ta==='RES'&&tb==='RES';const corner=legs.length===2;
       const r=n.filR||(both?(corner?6:4.5):(ta==='ART'||tb==='ART')?9:6);n.fil.push({sx,sz,r,px:n.x+sx*n.hx,pz:n.z+sz*n.hz});}}
   // 接続路
@@ -190,7 +194,8 @@ function nodeSetup(n,def){const legs=Object.keys(n.legs);
     for(const l of inLanes){l.inLeg=L;l.node=n;
       for(const L2 of legs){if(L2===L)continue;const e2=n.legs[L2];const r2=e2.road;if(r2.def.pedOnly)continue;// 歩行者用道路には入らない
         const dirOut=e2.end==='start'?1:-1;const outs=r2.lanes(dirOut);if(!outs.length)continue;
-        const turn=turnOf(legHeading[L],outHeading[L2]);let ok;
+        // 曲がる向き：方角の脚どうしから。多角形の交差点では道路の実際の向きから（斜めに入る道路）
+        const turn=n.poly?polyTurn(n,L,L2,l.pos(l.len).h,outs[0].pos(0).h):turnOf(legHeading[L],outHeading[L2]);let ok;
         if(l.arrows)ok=l.arrows.includes(turn);
         else if(l.kind==='turnR')ok=turn==='R';
         else if(turn==='L')ok=l.idx===0;
@@ -237,7 +242,10 @@ function connAt(c,s){const P=c.pts;s=clamp(s,0,c.len);let i=1;while(i<P.length-1
 function connProject(c,x,z){const P=c.pts;let best={s:0,d2:Infinity,h:0};for(let i=1;i<P.length;i++){const a=P[i-1],b=P[i];const dx=b.x-a.x,dz=b.z-a.z;const L2=dx*dx+dz*dz||1e-6;
     const t=clamp(((x-a.x)*dx+(z-a.z)*dz)/L2,0,1);const px=a.x+dx*t,pz=a.z+dz*t;const d2=(x-px)*(x-px)+(z-pz)*(z-pz);if(d2<best.d2)best={s:a.s+(b.s-a.s)*t,d2,h:headingOf(dx,dz)};}return best;}
 function inFillet(n,x,z){for(const f of n.fil){const u=(x-f.px)*f.sx,v=(z-f.pz)*f.sz;if(u>=-0.01&&v>=-0.01&&u<=f.r&&v<=f.r&&Math.hypot(u-f.r,v-f.r)>=f.r)return true;}return false;}
-function inNode(n,x,z,m=0.05){return(Math.abs(x-n.x)<=n.hx+m&&Math.abs(z-n.z)<=n.hz+m)||inFillet(n,x,z);}
+function inNode(n,x,z,m=0.05){if(n.poly)return polyHas(n.poly,x,z,m)||nodeConnNear(n,x,z,2.4+m);return(Math.abs(x-n.x)<=n.hx+m&&Math.abs(z-n.z)<=n.hz+m)||inFillet(n,x,z);}
+// 多角形（[[x,z],...]）の中か。m>0 なら縁から m 以内も中とみなす
+function polyHas(P,x,z,m=0){let inside=false;for(let i=0,j=P.length-1;i<P.length;j=i++){const xi=P[i][0],zi=P[i][1],xj=P[j][0],zj=P[j][1];if(((zi>z)!==(zj>z))&&(x<(xj-xi)*(z-zi)/((zj-zi)||1e-9)+xi))inside=!inside;}
+  if(inside||m<=0)return inside;for(let i=0,j=P.length-1;i<P.length;j=i++){const ax=P[j][0],az=P[j][1],bx=P[i][0],bz=P[i][1];const dx=bx-ax,dz=bz-az;const L2=dx*dx+dz*dz||1e-9;const t=clamp(((x-ax)*dx+(z-az)*dz)/L2,0,1);const px=ax+dx*t,pz=az+dz*t;if((x-px)*(x-px)+(z-pz)*(z-pz)<=m*m)return true;}return false;}
 
 // ---------- 空間索引 ----------
 function gkey(ix,iz){return ix*100003+iz;}

@@ -104,7 +104,7 @@ function routeNodes(from,to,banLeg,exitLeg){if(!from||!to)return null;const key=
     if(du>9000)continue;
     for(const L in cur.n.legs){if(L===cur.L)continue;const e=cur.n.legs[L];const r=e.road;const dir=e.end==='start'?1:-1;if(!r.lanes(dir).length||r.def.pedOnly)continue;
       // 指定方向外進行禁止（右折禁止など）
-      if(cur.L&&cur.n.noTurn&&cur.n.noTurn[cur.L]&&cur.n.noTurn[cur.L].includes(turnOf(legHeading[cur.L],outHeading[L])))continue;
+      if(cur.L&&cur.n.noTurn&&cur.n.noTurn[cur.L]&&cur.n.noTurn[cur.L].includes(legTurn(cur.n,cur.L,L)))continue;
       const m=dir>0?r.endNode:r.startNode;if(!m)continue;if(m.kind==='portal'&&m!==to)continue;const Lm=dir>0?r.endLeg:r.startLeg;const k=key(m,Lm);const d=du+r.len+10;
       if(!dist.has(k)||d<dist.get(k)){dist.set(k,d);prev.set(k,cur);q.push({n:m,L:Lm});}}}
   if(!end){if(from===to&&(!exitLeg||banLeg!==exitLeg)){const p=[from];p.arrL=banLeg;return p;}return null;}

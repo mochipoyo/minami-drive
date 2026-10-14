@@ -49,8 +49,8 @@ function buildGuardPipes(B,opt={}){for(const r of NET.roads){if(!(r.walk[0]||r.w
     for(const side of[-1,1]){const w=r.walk[side<0?0:1];if(!w)continue;const brk=r.feats.filter(f=>f.type==='xwalk'&&f.s!==undefined).map(f=>f.s);
       const s0=r.startNode&&r.startNode.kind==='x'?(r.startNode.xwalk[r.startLeg]?7:3):3,s1=r.len-(r.endNode&&r.endNode.kind==='x'?(r.endNode.xwalk[r.endLeg]?7:3):3);
       const tAt=(s)=>{const[lo,hi]=r.tRange(s);return side<0?lo-0.3:hi+0.3;};
-      for(let s=s0;s<s1;s+=3){if(brk.some(b=>Math.abs(s-b)<4))continue;if(opt.skip&&opt.skip(r,s,side))continue;const P=r.pt(s,tAt(s));B.box('def',P.x,P.y+0.55+0.15,P.z,0.07,0.8,0.07,0xf2f2f2);}
-      let a=s0;const ends=[...brk.map(b=>[b-4,b+4]),[s1,1e9]];for(const[b0,b1]of ends){if(b0>a+1){for(const yy of[0.77,1.05]){const pts=simplifyPts(roadEdgePts(r,a,Math.min(b0,s1),tAt,yy,4));for(let i=0;i<pts.length-1;i++)B.bar('def',pts[i].x,pts[i].y,pts[i].z,pts[i+1].x,pts[i+1].y,pts[i+1].z,0.05,0.05,0xf2f2f2);}}a=b1;}}}}
+      for(let s=s0;s<s1;s+=(opt.step||3)){if(brk.some(b=>Math.abs(s-b)<4))continue;if(opt.skip&&opt.skip(r,s,side))continue;const P=r.pt(s,tAt(s));B.box('def',P.x,P.y+0.55+0.15,P.z,0.07,0.8,0.07,0xf2f2f2);}
+      let a=s0;const ends=[...brk.map(b=>[b-4,b+4]),[s1,1e9]];for(const[b0,b1]of ends){if(b0>a+1){for(const yy of[0.77,1.05]){const pts=simplifyPts(roadEdgePts(r,a,Math.min(b0,s1),tAt,yy,4),opt.tol);for(let i=0;i<pts.length-1;i++)B.bar('def',pts[i].x,pts[i].y,pts[i].z,pts[i+1].x,pts[i+1].y,pts[i+1].z,0.05,0.05,0xf2f2f2);}}a=b1;}}}}
 // 一直線に並んだ点をまとめる（棒の数を減らす）
 function simplifyPts(pts,tol=0.004){if(pts.length<3)return pts;const out=[pts[0]];for(let i=1;i<pts.length-1;i++){const a=out[out.length-1],b=pts[i],c=pts[i+1];const h1=Math.atan2(b.x-a.x,b.z-a.z),h2=Math.atan2(c.x-b.x,c.z-b.z);if(Math.abs(wrapA(h2-h1))>tol||Math.abs(c.y-b.y-(b.y-a.y))>0.02)out.push(b);}out.push(pts[pts.length-1]);return out;}
 // 街路樹

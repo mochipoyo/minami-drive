@@ -35,6 +35,8 @@ function crosswalkBusy(n,L){const X=XWALKS.find(x=>x.node===n&&x.L===L);if(!X)re
 function midXwalkBusy(f,v){const X=XWALKS.find(x=>x.mid&&x.f===f);if(!X)return false;return X.peds.some(p=>p.mode==='xcross'||(p.mode==='xwait'&&p.waitT>0.6));}
 function vehiclesApproachingMid(X,dist){const r=X.r;for(const o of VEH){if(o.hidden||o.conn||!o.lane||o.lane.road!==r)continue;const d=(X.s-o.lane.sOf(o.u))*o.lane.dir;if(d>0&&d<dist&&o.v>1.2)return true;}
   const p=PLAYER;if(p&&STAGE.running&&p.loc&&p.loc.kind==='road'&&p.loc.road===r){const al=Math.cos(wrapA(p.h-r.at(p.loc.s).h));const dir=al>0?1:-1;const d=(X.s-p.loc.s)*dir;if(d>0&&d<dist&&p.v>1.2)return true;}return false;}
+// 多角形の大きな交差点：交差点の中心ではなく、その横断歩道のそばに動いている車がいないか
+function vehiclesNearXwalk(X,d){const cx=(X.a.x+X.b.x)/2,cz=(X.a.z+X.b.z)/2;for(const o of VEH)if(!o.hidden&&Math.hypot(o.x-cx,o.z-cz)<d&&o.v>1)return true;const p=PLAYER;return!!(p&&STAGE.running&&Math.hypot(p.x-cx,p.z-cz)<d&&p.v>1);}
 function vehiclesNearNode(n,d){for(const o of VEH)if(!o.hidden&&Math.hypot(o.x-n.x,o.z-n.z)<d&&o.v>1)return true;const p=PLAYER;return!!(p&&STAGE.running&&Math.hypot(p.x-n.x,p.z-n.z)<d&&p.v>1);}
 // ---- 歩道を歩く人 ----
 function buildWalkPaths(){WALKS.length=0;for(const r of NET.roads){if(r.len<24||r.type==='EXP'||r.type==='RAMP')continue;
@@ -57,7 +59,7 @@ function updatePeds(dt){
       p.blockT=0;if(p.wOff>0){const back=Math.max(0,p.wOff-dt*0.45);const Q=w.r.pt(ws,w.t(ws)+back*(w.inward||0));if(!pedBlocked(Q.x,Q.z,p.R+0.6))p.wOff=back;}
       p.ws=ws;const dx=P.x-p.x,dz=P.z-p.z;if(Math.hypot(dx,dz)>0.01)p.h=headingOf(dx,dz);p.x=P.x;p.z=P.z;p.y=P.y+(w.res?0:0.15);p.v=p.spd*0.85;}
     else if(p.mode==='xwait'){p.v=0;p.waitT+=dt;const X=p.X;let go=false;
-      if(X.mid)go=!vehiclesApproachingMid(X,40)&&p.waitT>1.2;else if(X.diag)go=X.sig.pedFor('N')==='G'&&X.sig.scrambleNow();else{const s=X.sig?X.sig.pedFor(X.L):'OFF';go=s==='G'||(s==='OFF'&&p.waitT>3&&!vehiclesNearNode(X.node,25));}
+      if(X.mid)go=!vehiclesApproachingMid(X,40)&&p.waitT>1.2;else if(X.diag)go=X.sig.pedFor('N')==='G'&&X.sig.scrambleNow();else{const s=X.sig?X.sig.pedFor(X.L):'OFF';go=s==='G'||(s==='OFF'&&p.waitT>3&&!(X.node.poly?vehiclesNearXwalk(X,20):vehiclesNearNode(X.node,25)));}
       if(go)p.mode='xcross';const t=p.from===0?X.b:X.a;p.h=headingOf(t.x-p.x,t.z-p.z);}
     else if(p.mode==='xcross'){const X=p.X;const t=p.from===0?X.b:X.a;const hurry=!X.mid&&X.sig&&X.sig.pedFor(X.diag?'N':X.L)!=='G'?1.45:1;
       {const dx=t.x-p.x,dz=t.z-p.z,d=Math.hypot(dx,dz)||1;const bk=pedBlocked(p.x+dx/d*0.35,p.z+dz/d*0.35,p.R+0.15,p.x,p.z);
@@ -81,5 +83,5 @@ function pedBlocked(x,z,rad,x0,z0){const near=(o)=>{const d1=distToOBB(o,x,z);if
 function spawnCrosser(X,from,kind){let p=PEDS.find(q=>q.mode==='off'&&q.kind===kind&&!q.reserved);if(!p){if(PEDS.length>=PEDCAP)return null;p=new Ped(kind);PEDS.push(p);}
   const s=from===0?X.a:X.b;const off=(R()-0.5)*1.4;const dx=X.b.x-X.a.x,dz=X.b.z-X.a.z,L=Math.hypot(dx,dz)||1;p.set(s.x+(-dz/L)*off,s.z+(dx/L)*off);p.y=(X.node?X.node.y:X.r?X.r.yAt(X.s):0)+0.15;
   p.X=X;p.from=from;p.mode='xwait';p.waitT=0;p.onWalk=false;p.show(true);X.peds.push(p);return p;}
-function clearPeds(){for(const p of PEDS){p.show(false);p.reserved=false;}PEDS.length=0;for(const X of XWALKS)X.peds=[];}
+function clearPeds(){for(const p of PEDS){p.show(false);p.reserved=false;}PEDS.length=0;for(const X of XWALKS)X.peds=[];pedSpawnT=0;pedRecT=0;}// 横断者を出す間隔の残りは教習ごとに最初から（原簿を見ていた時間で変わらないように）
 

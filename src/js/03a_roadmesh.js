@@ -159,7 +159,8 @@ function arrowMark(B,r,s,t,dir,set){const P=r.pt(s,t);const h=dir>0?P.h:wrapA(P.
 function textMark(B,r,s,t,dir,cell,w,l){const P=r.pt(s,t);const h=dir>0?P.h:wrapA(P.h+Math.PI);DECALS.push({x:P.x,y:P.y+0.03,z:P.z,h,w,l,cell});}
 const DECALS=[];
 // ---- 交差点の路面と歩道の角 ----
-function buildNodeMesh(B,n){const y=n.y||0;const legs=Object.keys(n.legs);const anyRes=legs.every(L=>n.legs[L].road.type==='RES');const col=anyRes?COL.asphRES:COL.asph;
+function buildNodeMesh(B,n){if(n.poly){buildNodePolyMesh(B,n);return;}// 多角形の交差点（02h）
+  const y=n.y||0;const legs=Object.keys(n.legs);const anyRes=legs.every(L=>n.legs[L].road.type==='RES');const col=anyRes?COL.asphRES:COL.asph;
   B.poly('road',[[n.x-n.hx,n.z-n.hz],[n.x+n.hx,n.z-n.hz],[n.x+n.hx,n.z+n.hz],[n.x-n.hx,n.z+n.hz]],y,col,8);
   for(const f of n.fil){const pts=[];for(let i=0;i<=10;i++){const a=Math.PI+i/10*Math.PI/2;pts.push([f.px+f.sx*(f.r+f.r*Math.cos(a)),f.pz+f.sz*(f.r+f.r*Math.sin(a))]);}
     pts.push([f.px,f.pz]);B.poly('road',pts,y,col,8);}
