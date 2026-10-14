@@ -13,7 +13,7 @@ export default async function ({ browser, url, rep }) {
   const BASE26 = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 'e1', 'e2', 'e3', 'e4', 'a1', 'e5', 'c1', 'c2', 'c3', 'f2', 'p1', 'p2', 'p3', 'p4', 'sg1', 'sg2', 'sg3', 'a2', 'a3'];
   const ids = stages.map(s => s.id);
   rep.ok(S, '既存の26教習がそろっていて、順番も変わらない', BASE26.every((id, i) => ids[i] === id), ids.slice(0, 26).join(','));
-  rep.ok(S, 'そのあとに特殊モードが1つある（26＋1）', stages.length === 27 && ids[26] === 'sp1' && stages[26].cat === 'special', `${stages.length}教習`);
+  rep.ok(S, 'そのあとに特殊モードが1つ、東京（新宿）が2つと自由走行が1つある（26＋1＋3）', stages.length === 30 && ids[26] === 'sp1' && stages[26].cat === 'special' && ids.slice(27).join(',') === 't1,t2,f3' && stages[27].cat === 'tokyo' && stages[29].cat === 'free', `${stages.length}教習 ${ids.slice(26).join(',')}`);
   const only = (process.env.ONLY_STAGES || '').split(',').filter(Boolean);
   for (const st of stages) {
     if (only.length && !only.includes(st.id)) continue;

@@ -66,7 +66,7 @@ export default async function ({ browser, url, rep }) {
 
   // 1) メニュー：「特殊モード」のタブ（いちばん最後）から始められる。説明に時間帯・天気の選択がある
   const tabs = await page.evaluate(() => [...document.querySelectorAll('.tabs .tab')].map(t => t.dataset.k));
-  rep.ok(S, 'メニューに「特殊モード」のタブがある（既存の7つのタブのあと）', tabs.join(',') === 'town,city,exp,aori,park,sign,free,special', tabs.join(','));
+  rep.ok(S, 'メニューに「特殊モード」のタブがある（既存の7つのタブ＋東京のあと）', tabs.join(',') === 'town,city,tokyo,exp,aori,park,sign,free,special', tabs.join(','));
   await page.click('.tabs .tab[data-k="special"]');
   const rows = await page.evaluate(() => [...document.querySelectorAll('tr.row')].map(r => ({ i: +r.dataset.i, t: r.innerText.replace(/\s+/g, ' ') })));
   rep.ok(S, '特殊モードの一覧に「逆走車と突然の横断」がある', rows.length === 1 && /逆走車と突然の横断/.test(rows[0].t), rows.map(r => r.t.slice(0, 40)).join(' / '));
