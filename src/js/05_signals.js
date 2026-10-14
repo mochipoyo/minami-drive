@@ -6,7 +6,10 @@ class Signal{
   constructor(n,offset,SB){this.n=n;this.SB=SB;const d=n.signal||{};this.def=d;this.arrow=!!d.arrow;this.g=d.g||{NS:16,EW:18};this.seq=[];
     for(const G of['NS','EW']){this.seq.push([G,'G',this.g[G]],[G,'Y',d.y||3]);if(this.arrow){this.seq.push([G,'RA',d.ra||5],[G,'Y2',2.5]);}this.seq.push([G,'AR',d.ar||2]);}
     if(d.scramble){this.seq.push(['PED','PG',d.pg||18],['PED','PF',5],['PED','AR',2]);}
-    this.i=0;this.t=offset%this.seq[0][2];this.heads=[];this.peds=[];this.dark=false;this.hold=0;this.build();}
+    this.i=0;this.t=offset%this.seq[0][2];
+    // def.offset：周期の中の位置（秒。NS の青の始まりが 0）を指定する（近い信号どうしを同じ周期にそろえる：新宿）。指定がなければ今までどおり
+    if(d.offset!==undefined){const cyc=this.seq.reduce((s,q)=>s+q[2],0);let o=((d.offset%cyc)+cyc)%cyc;let i=0;while(o>=this.seq[i][2]){o-=this.seq[i][2];i++;}this.i=i;this.t=o;}
+    this.heads=[];this.peds=[];this.dark=false;this.hold=0;this.build();}
   get cur(){return this.seq[this.i];}
   update(dt){if(this.hold>0){this.hold-=dt;}else{this.t+=dt;while(this.t>=this.cur[2]){this.t-=this.cur[2];this.i=(this.i+1)%this.seq.length;}}this.paint();}
   stateFor(L){if(this.dark)return'OFF';const[G,P]=this.cur;if(G==='PED')return'R';if(G!==grpOf(L))return'R';if(P==='G')return'G';if(P==='Y'||P==='Y2')return'Y';if(P==='RA')return'RA';return'R';}

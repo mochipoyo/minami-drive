@@ -224,7 +224,14 @@ function makeDrivePath(c){if(c.turn!=='L'&&c.turn!=='R')return null;const l0=c.f
   if(a>T)push(p0.x,p0.z);// 交差点の中で少しまっすぐ進んでから
   for(let i=0;i<=N;i++){const hh=p0.h+side*th*i/N;const rv=rightV(hh);push(C.x-rv.x*R*side,C.z-rv.z*R*side);}
   if(-b>T)push(p3.x,p3.z);
+  // 多角形の交差点（新宿）：細い道の鋭い角では、この円弧だと車体が歩道の角にかかることがある。そのときは接続路（ベジエ）をそのまま使う（02h）
+  if(n.poly&&n.corners&&n.corners.length&&drivePathClips(P,n.corners))return null;
   return{pts:P,len,l0,l1,sIn:Math.max(0,T-a),sOut:Math.max(0,T+b),y:c.y,R,h0:p0.h,h1:p3.h,c};}
+// 線に沿って車体（幅1.8m・長さ4.7m）を置いたとき、歩道の角の多角形にかかるか
+function drivePathClips(P,corners){const W2=0.9,L2=2.35;
+  for(let i=1;i<P.length;i++){const a=P[i-1],b=P[i];const dx=b.x-a.x,dz=b.z-a.z;const L=Math.hypot(dx,dz);if(L<1e-6)continue;const f={x:dx/L,z:dz/L},r={x:-f.z,z:f.x};
+    for(const[u,v]of[[1,1],[1,-1],[-1,-1],[-1,1],[0,-1],[0,1]]){const x=b.x+f.x*L2*u+r.x*W2*v,z=b.z+f.z*L2*u+r.z*W2*v;for(const c of corners)if(polyHas(c.pts,x,z,0))return true;}}
+  return false;}
 function drvAt(D,s){if(s<0){const u=D.l0.len-D.sIn+s;if(u>=0)return D.l0.pos(u,0);const f=fwd(D.h0);const P=D.pts[0];return{x:P.x+f.x*s,z:P.z+f.z*s,y:D.y};}
   if(s>D.len){const u=D.sOut+(s-D.len);if(u<=D.l1.len)return D.l1.pos(u,0);const f=fwd(D.h1);const P=D.pts[D.pts.length-1];return{x:P.x+f.x*(s-D.len),z:P.z+f.z*(s-D.len),y:D.y};}
   const P=D.pts;let i=1;while(i<P.length-1&&P[i].s<s)i++;const a=P[i-1],b=P[i];const t=(s-a.s)/((b.s-a.s)||1);return{x:a.x+(b.x-a.x)*t,z:a.z+(b.z-a.z)*t,y:D.y};}
