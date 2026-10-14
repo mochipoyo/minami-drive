@@ -81,7 +81,8 @@ function lightMat(st){const key=(st.head?1:0)|(st.brake?2:0)|(st.tl?4:0)|(st.tr?
 function makeCar(type,color){const T=CARTYPES[type];const key=type+':'+color;let g=GEOCACHE.get(key);if(!g){g=carGeo(type,color);GEOCACHE.set(key,g);}
   const grp=new THREE.Group();const body=new THREE.Mesh(g,MAT.paint||MAT.model);body.castShadow=true;grp.add(body);
   const lights=new THREE.Mesh(carLightGeo(type),lightMat({}));grp.add(lights);
-  return{grp,body,lights,L:T.L,W:T.W,H:T.H,type,st:-1};}
+  const m={grp,body,lights,L:T.L,W:T.W,H:T.H,type,st:-1,color};if(typeof carAssetApply==='function')carAssetApply(m);// 読み込んだ3Dモデルがあれば差し替える（04b）
+  return m;}
 function setCarLights(c,st){// st:{brake,turnL,turnR,head,beacon,blink}
   const s={head:st.head,brake:st.brake,tail:st.head,tl:st.turnL&&st.blink,tr:st.turnR&&st.blink,beacon:st.beacon&&st.blink,beacon2:st.beacon&&!st.blink,rev:st.rev};
   const key=(s.head?1:0)|(s.brake?2:0)|(s.tl?4:0)|(s.tr?8:0)|(s.beacon?16:0)|(s.beacon2?32:0)|(s.tail?64:0)|(s.rev?128:0);if(c.st===key)return;c.st=key;c.lights.material=lightMat(s);}

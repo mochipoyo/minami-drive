@@ -2,14 +2,14 @@
 let renderer,camera,cockpit,wheelSpin,orthoCam,mirScene,sun,hemi,skyMesh,rainMesh,envRT=null,pmrem=null;const MIR={};let viewMode='cockpit';let frameNo=0;
 const ENV={mode:'day',shake:0,dark:false,tunnel:0,q:'high'};
 const VIEW={pr:1,prMax:1.5,ft:[],lastAdj:0,rearCam:null};
-function initRenderer(quality){const canvas=document.getElementById('gl');const low=quality==='low';ENV.q=quality;
+function initRenderer(quality){const canvas=document.getElementById('gl');const low=quality==='low';ENV.q=quality;const shadows=!low&&!(typeof SETTINGS!=='undefined'&&SETTINGS.shadow===false);// 設定「影」をオフにすると影なし
   renderer=new THREE.WebGLRenderer({canvas,antialias:!low,powerPreference:'high-performance'});VIEW.prMax=Math.min(window.devicePixelRatio||1,quality==='high'?1.75:quality==='mid'?1.25:1);VIEW.pr=VIEW.prMax;renderer.setPixelRatio(VIEW.pr);
   renderer.outputEncoding=THREE.sRGBEncoding;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.0;
   MAXANISO=Math.min(8,renderer.capabilities.getMaxAnisotropy());
-  renderer.shadowMap.enabled=!low;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled=shadows;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   camera=new THREE.PerspectiveCamera(62,1,0.08,2200);camera.layers.enable(1);camera.rotation.order='YXZ';
   hemi=new THREE.HemisphereLight(0xdfeeff,0x6d6555,0.75);scene.add(hemi);
-  sun=new THREE.DirectionalLight(0xfff1dc,2.4);sun.castShadow=!low;const ms=quality==='high'?2048:1024;sun.shadow.mapSize.set(ms,ms);const sc=sun.shadow.camera;sc.left=-75;sc.right=75;sc.top=75;sc.bottom=-75;sc.near=10;sc.far=400;sun.shadow.bias=-0.0005;sun.shadow.normalBias=0.03;
+  sun=new THREE.DirectionalLight(0xfff1dc,2.4);sun.castShadow=shadows;const ms=quality==='high'?2048:1024;sun.shadow.mapSize.set(ms,ms);const sc=sun.shadow.camera;sc.left=-75;sc.right=75;sc.top=75;sc.bottom=-75;sc.near=10;sc.far=400;sun.shadow.bias=-0.0005;sun.shadow.normalBias=0.03;
   scene.add(sun);scene.add(sun.target);scene.fog=new THREE.Fog(0xdbe6ec,160,900);
   orthoCam=new THREE.OrthographicCamera(-1,1,1,-1,0,2);mirScene=new THREE.Scene();
   for(const[k,w,h,fov]of[['rear',512,150,22],['L',256,160,32],['R',256,160,32],['cam',384,256,110]]){const rt=new THREE.WebGLRenderTarget(w,h,{stencilBuffer:true});rt.texture.encoding=THREE.sRGBEncoding;
@@ -52,7 +52,7 @@ function placeCams(dt){const p=PLAYER;const f=fwd(p.h),r=rightV(p.h);const y=p.y
   MIR.L.cam.position.set(p.x-r.x*0.98+f.x*0.5,y+1.06,p.z-r.z*0.98+f.z*0.5);MIR.L.cam.rotation.set(-0.06,-(p.h+Math.PI+0.2),0);
   MIR.R.cam.position.set(p.x+r.x*0.98+f.x*0.5,y+1.06,p.z+r.z*0.98+f.z*0.5);MIR.R.cam.rotation.set(-0.06,-(p.h+Math.PI-0.12),0);
   MIR.cam.cam.position.set(p.x-f.x*(p.L/2+0.05),y+1.05,p.z-f.z*(p.L/2+0.05));MIR.cam.cam.rotation.set(-0.62,-(p.h+Math.PI),0);
-  sun.position.set(p.x+80,y+120,p.z+50);sun.target.position.set(p.x,y,p.z);if(skyMesh)skyMesh.position.set(camera.position.x,0,camera.position.z);
+  sun.position.set(p.x+80,y+120,p.z+50);sun.target.position.set(p.x,y,p.z);if(skyMesh){skyMesh.position.set(camera.position.x,0,camera.position.z);const co=skyMesh.material.uniforms.cloudOff.value;co.x+=dt*0.0004;co.y+=dt*0.00015;}// 雲がゆっくり流れる
   if(rainMesh&&rainMesh.visible){rainMesh.position.set(camera.position.x,y,camera.position.z);const a=rainMesh.geometry.attributes.position;for(let i=0;i<a.count;i+=2){let yy=a.getY(i)-dt*22;if(yy<0)yy+=14;a.setY(i,yy);a.setY(i+1,yy+0.5);}a.needsUpdate=true;}}
 // ---- 遠くの細かい物（路面の表示・標識・看板・街灯・遠くの車など）は描かない：描画の負荷を下げる（霧で見えにくい距離） ----
 const CULL={list:[],t:0,off:false};
@@ -62,8 +62,9 @@ function cullBuild(){CULL.list.length=0;CULL.off=false;const th={mark:300,lamp:3
 function cullTick(){if(!STAGE.running){if(CULL.off)return;CULL.off=true;for(const e of CULL.list)e.o.visible=true;for(const v of VEH)if(!v.hidden)v.m.grp.visible=true;return;}CULL.off=false;
   CULL.t=(CULL.t+1)%4;if(CULL.t!==0)return;const P=camera.position;
   for(const e of CULL.list){const dx=e.c.x-P.x,dz=e.c.z-P.z;e.o.visible=Math.sqrt(dx*dx+dz*dz)-e.r<e.d;}
-  for(const v of VEH){if(v.hidden)continue;const dx=v.x-P.x,dz=v.z-P.z;v.m.grp.visible=dx*dx+dz*dz<420*420;}}
-function renderAll(showMirrors){const W=window.innerWidth,H=window.innerHeight;renderer.setRenderTarget(null);renderer.setScissorTest(false);renderer.setViewport(0,0,W,H);
+  for(const v of VEH){if(v.hidden)continue;const dx=v.x-P.x,dz=v.z-P.z;const d2=dx*dx+dz*dz;v.m.grp.visible=d2<420*420;if(v.m.glb)carAssetLod(v.m,d2);}}
+function renderAll(showMirrors){if(renderer.getContext().isContextLost())return;// 中断中は描かない（中断のイベントが届く前の一瞬も含む）
+  const W=window.innerWidth,H=window.innerHeight;renderer.setRenderTarget(null);renderer.setScissorTest(false);renderer.setViewport(0,0,W,H);
   const body=PLAYER&&PLAYER.model.grp;if(body)body.visible=viewMode!=='cockpit';renderer.render(scene,camera);if(body)body.visible=true;
   const camOn=MIR.cam.el&&!MIR.cam.el.hidden;if(!showMirrors&&!camOn)return;frameNo++;const list=[];if(showMirrors)list.push(...(frameNo%2?['rear']:['L','R']));if(camOn)list.push('cam');
   for(const k of list){const m=MIR[k];if(!m.el||m.el.hidden)continue;if(body)body.visible=k!=='rear'&&k!=='cam';renderer.setRenderTarget(m.rt);renderer.render(scene,m.cam);}if(body)body.visible=true;
@@ -89,25 +90,31 @@ function adaptRes(dt){if(!renderer)return;VIEW.ft.push(dt);if(VIEW.ft.length<45)
   let pr=VIEW.pr;if(avg>1/26&&pr>0.6)pr=Math.max(0.6,pr-0.15);else if(avg<1/52&&pr<VIEW.prMax)pr=Math.min(VIEW.prMax,pr+0.1);if(Math.abs(pr-VIEW.pr)>0.01){VIEW.pr=pr;renderer.setPixelRatio(pr);resizeView();}}
 // ---- 空 ----
 const SKY={top:new THREE.Color(),hor:new THREE.Color(),sun:new THREE.Vector3(0.45,0.6,0.35)};
+// 空：グラデーション＋太陽＋雲（雲は値ノイズ。cloudAmt=0 なら描かない。品質「低」では 0）
 function buildSky(){const g=new THREE.SphereGeometry(1800,32,16);const m=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,
-    uniforms:{top:{value:new THREE.Color(0x4f8fd0)},hor:{value:new THREE.Color(0xd9e6ee)},bot:{value:new THREE.Color(0x9fb0a6)},sunDir:{value:SKY.sun},sunCol:{value:new THREE.Color(0xfff2d8)},sunAmt:{value:1}},
+    uniforms:{top:{value:new THREE.Color(0x4f8fd0)},hor:{value:new THREE.Color(0xd9e6ee)},bot:{value:new THREE.Color(0x9fb0a6)},sunDir:{value:SKY.sun},sunCol:{value:new THREE.Color(0xfff2d8)},sunAmt:{value:1},
+      cloudAmt:{value:0},cloudCol:{value:new THREE.Color(0xffffff)},cloudDark:{value:new THREE.Color(0xb8c4cc)},cloudOff:{value:new THREE.Vector2(0,0)},cloudCov:{value:0.55},cloudTex:{value:typeof cloudTex==='function'?cloudTex():null}},
     vertexShader:'varying vec3 vP;void main(){vP=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-    fragmentShader:`uniform vec3 top,hor,bot,sunCol;uniform vec3 sunDir;uniform float sunAmt;varying vec3 vP;
+    fragmentShader:`uniform vec3 top,hor,bot,sunCol,cloudCol,cloudDark;uniform vec3 sunDir;uniform float sunAmt,cloudAmt,cloudCov;uniform vec2 cloudOff;uniform sampler2D cloudTex;varying vec3 vP;
       void main(){float y=vP.y;vec3 c=y>0.0?mix(hor,top,pow(clamp(y,0.0,1.0),0.55)):mix(hor,bot,clamp(-y*4.0,0.0,1.0));float s=max(dot(normalize(vP),normalize(sunDir)),0.0);
+      if(cloudAmt>0.001&&y>0.01){vec2 cp=vP.xz/(y+0.12)*0.11+cloudOff;vec2 nn=texture2D(cloudTex,cp).rg;// 雲の模様はあらかじめ描いた画像（07c）。r:形 g:明るさ
+        float cl=smoothstep(cloudCov,cloudCov+0.22,nn.r)*cloudAmt*smoothstep(0.0,0.2,y);
+        float lit=0.55+0.45*nn.g;c=mix(c,mix(cloudDark,cloudCol,lit),cl);}
       c+=sunCol*(pow(s,600.0)*4.0+pow(s,12.0)*0.25)*sunAmt;gl_FragColor=vec4(c,1.0);\n#include <tonemapping_fragment>\n#include <encodings_fragment>\n}`});
   const sky=new THREE.Mesh(g,m);sky.renderOrder=-10;sky.frustumCulled=false;scene.add(sky);return sky;}
 // 遠くの山並み（地図ごとに色を変える）
 function buildHills(B,cx,cz,R0,n,cols){const r=rng(5);for(let i=0;i<n;i++){const a=i/n*Math.PI*2+r()*0.1,d=R0+r()*R0*0.2;const h=60+r()*140,w=200+r()*180;
     const m4=new THREE.Matrix4().compose(new V3(cx+Math.cos(a)*d,h/2-8,cz+Math.sin(a)*d),new THREE.Quaternion(),new V3(w,h,w*0.8));B.addGeo('hill',GEO.cone,m4,pick(cols||[0x6e8a6a,0x7b9478,0x667f6a],r));}}
 // ---- 天候・時間帯 ----
-const ENVDEF={day:{fog:0xdbe6ec,n:160,f:900,h:0.75,s:2.4,top:0x4f8fd0,hor:0xd9e6ee,sunAmt:1,sunCol:0xfff1dc,mu:1,exp:1.0},
-  evening:{fog:0xe7c4a0,n:130,f:700,h:0.55,s:1.6,top:0x6b7fb3,hor:0xf0b98a,sunAmt:1.4,sunCol:0xffb070,mu:1,exp:1.05,sunY:0.12},
-  night:{fog:0x0b111d,n:30,f:330,h:0.12,s:0.05,top:0x070b16,hor:0x1a2236,sunAmt:0,sunCol:0x223355,mu:1,exp:1.25,dark:true},
-  rain:{fog:0x8c969c,n:14,f:170,h:0.55,s:0.5,top:0x7d8a93,hor:0xa2abb0,sunAmt:0,sunCol:0xffffff,mu:0.72,exp:1.0},
+const ENVDEF={day:{fog:0xdbe6ec,n:160,f:900,h:0.75,s:2.4,top:0x4f8fd0,hor:0xd9e6ee,sunAmt:1,sunCol:0xfff1dc,mu:1,exp:1.0,cloud:{amt:0.9,cov:0.56,col:0xffffff,dark:0xb9c6d0}},
+  evening:{fog:0xe7c4a0,n:130,f:700,h:0.55,s:1.6,top:0x6b7fb3,hor:0xf0b98a,sunAmt:1.4,sunCol:0xffb070,mu:1,exp:1.05,sunY:0.12,cloud:{amt:0.85,cov:0.58,col:0xffc9a0,dark:0x8a7a90}},
+  night:{fog:0x0b111d,n:30,f:330,h:0.12,s:0.05,top:0x070b16,hor:0x1a2236,sunAmt:0,sunCol:0x223355,mu:1,exp:1.25,dark:true,cloud:{amt:0.7,cov:0.6,col:0x2a3348,dark:0x10151f}},
+  rain:{fog:0x8c969c,n:14,f:170,h:0.55,s:0.5,top:0x7d8a93,hor:0xa2abb0,sunAmt:0,sunCol:0xffffff,mu:0.72,exp:1.0,cloud:{amt:1.0,cov:0.3,col:0x9aa5ab,dark:0x6e7980}},
   fog:{fog:0xc2c8cb,n:4,f:62,h:0.6,s:0.5,top:0xc2c8cb,hor:0xc8cdd0,sunAmt:0,sunCol:0xffffff,mu:0.85,exp:1.0,dark:true}};
 function setEnv(mode){ENV.mode=mode;const W=ENVDEF[mode]||ENVDEF.day;ENV.dark=!!W.dark;
   const fm=(NET.map&&NET.map.fogMul)||1;scene.fog.color.copy(C(W.fog));scene.fog.near=W.n*(W.dark&&mode==='fog'?1:fm);scene.fog.far=Math.min(2100,W.f*(mode==='fog'?1:fm));hemi.intensity=W.h;sun.intensity=W.s;sun.color.copy(C(W.sunCol));renderer.toneMappingExposure=W.exp;
-  if(skyMesh){const u=skyMesh.material.uniforms;u.top.value.copy(C(W.top));u.hor.value.copy(C(W.hor));u.bot.value.copy(C(W.hor)).multiplyScalar(0.8);u.sunAmt.value=W.sunAmt;u.sunCol.value.copy(C(W.sunCol));}
+  if(skyMesh){const u=skyMesh.material.uniforms;u.top.value.copy(C(W.top));u.hor.value.copy(C(W.hor));u.bot.value.copy(C(W.hor)).multiplyScalar(0.8);u.sunAmt.value=W.sunAmt;u.sunCol.value.copy(C(W.sunCol));
+    const cl=W.cloud||{amt:0};u.cloudAmt.value=ENV.q==='low'||!u.cloudTex.value?0:(cl.amt||0);u.cloudCov.value=cl.cov!==undefined?cl.cov:0.55;u.cloudCol.value.copy(C(cl.col||0xffffff));u.cloudDark.value.copy(C(cl.dark||0xb8c4cc));}
   SKY.sun.set(0.45,W.sunY||0.6,0.35).normalize();
   if(MAT.lamp)MAT.lamp.color.copy(C(W.dark||mode==='rain'?0xfff1c4:0x8a8a8a)).multiplyScalar(W.dark?2.0:1);
   for(let i=0;i<5;i++)if(MAT['fac'+i])MAT['fac'+i].emissive.copy(C(0xffffff)).multiplyScalar(mode==='night'?0.95:mode==='evening'?0.25:0);
@@ -116,7 +123,8 @@ function setEnv(mode){ENV.mode=mode;const W=ENVDEF[mode]||ENVDEF.day;ENV.dark=!!
   if(NET.map&&NET.map.onEnv)NET.map.onEnv(mode);
   renderer.setClearColor(C(W.fog));if(PLAYER)PLAYER.mu=W.mu;if(rainMesh)rainMesh.visible=mode==='rain';
   // 車の塗装に映る景色
-  try{if(envRT)envRT.dispose();const es=new THREE.Scene();const sk=buildSkyClone(W);es.add(sk);envRT=pmrem.fromScene(es,0.04);if(MAT.paint){MAT.paint.envMap=envRT.texture;MAT.paint.needsUpdate=true;}}catch(e){}}
+  try{if(envRT)envRT.dispose();const es=new THREE.Scene();const sk=buildSkyClone(W);es.add(sk);envRT=pmrem.fromScene(es,0.04);if(MAT.paint){MAT.paint.envMap=envRT.texture;MAT.paint.needsUpdate=true;}}catch(e){}
+  if(typeof visualEnv==='function')visualEnv(mode,W);}
 function buildSkyClone(W){const g=new THREE.SphereGeometry(100,24,12);const col=[];const P=g.attributes.position;const top=C(W.top),hor=C(W.hor);const bot=C(0x5a5a55);
   for(let i=0;i<P.count;i++){const y=P.getY(i)/100;const c=y>0?hor.clone().lerp(top,Math.pow(y,0.6)):hor.clone().lerp(bot,Math.min(1,-y*3));col.push(c.r,c.g,c.b);}g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
   return new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide}));}

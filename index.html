@@ -447,7 +447,10 @@ function sysNotice(kind,detail){const n=document.getElementById('sysNotice');if(
 // 実行中の予期しないエラー：このページと three.js のエラーだけを対象にし、1回だけ知らせる（拡張機能などのエラーは除く）
 let SYS_ERR=false;
 window.addEventListener('error',(e)=>{if(SYS_ERR||!e)return;const f=String(e.filename||'');const here=location.href.split('#')[0];
-  if(!(f.split('#')[0]===here||/three(\.min)?\.js/.test(f)))return;SYS_ERR=true;try{sysNotice('error',e.message);}catch(x){}});
+  if(!(f.split('#')[0]===here||/three(\.min)?\.js/.test(f)))return;
+  // 3D表示が中断（WebGL コンテキストの喪失）している間のエラーは、中断のお知らせだけにする（three.js r128 は、中断中に描画の部品を作ると例外になる）
+  try{if(typeof renderer!=='undefined'&&renderer&&renderer.getContext().isContextLost())return;}catch(x){}
+  SYS_ERR=true;try{sysNotice('error',e.message);}catch(x){}});
 if(typeof THREE==='undefined'){bootFail('three');return;}
 
 // ===== 00_text.js : 違反・解説データ（2026年10月時点で確認した法令・公的情報に基づく） =====
@@ -2082,7 +2085,7 @@ Batch.prototype.wallBox=function(key,cx,cz,y0,sx,sy,sz,color,ry,uvW=3.2,uvH=3){c
     const q=[[A,y0,0,0],[Bq,y0,uu,0],[Bq,y0+sy,uu,vv],[A,y0,0,0],[Bq,y0+sy,uu,vv],[A,y0+sy,0,vv]];
     for(const[p,yy,u,v]of q)this._v(o,p.x,yy,p.z,nx,0,nz,c,u,v);}
   // 屋根（天面）
-  const tp=[T(-hx,-hz),T(hx,-hz),T(hx,hz),T(-hx,hz)];const tc=C(0x8d8a85);for(const[p,u,v]of[[tp[0],0,0],[tp[2],1,1],[tp[1],1,0],[tp[0],0,0],[tp[3],0,1],[tp[2],1,1]])this._v(o,p.x,y0+sy,p.z,0,1,0,tc,0,0);};
+  const tp=[T(-hx,-hz),T(hx,-hz),T(hx,hz),T(-hx,hz)];const tc=C(0x8d8a85);for(const[p,u,v]of[[tp[0],0,0],[tp[2],1,1],[tp[1],1,0],[tp[0],0,0],[tp[3],0,1],[tp[2],1,1]])this._v(o,p.x,y0+sy,p.z,0,1,0,tc,0,9);};// 屋根の v=9：壁の足もとを暗くする処理（07c）の対象外にする（テクスチャは繰り返しなので見た目は同じ）
 
 
 // ===== 03c_props.js : 標識・電柱・街灯・ガードパイプ・街路樹・塀 =====
@@ -2779,7 +2782,8 @@ function lightMat(st){const key=(st.head?1:0)|(st.brake?2:0)|(st.tl?4:0)|(st.tr?
 function makeCar(type,color){const T=CARTYPES[type];const key=type+':'+color;let g=GEOCACHE.get(key);if(!g){g=carGeo(type,color);GEOCACHE.set(key,g);}
   const grp=new THREE.Group();const body=new THREE.Mesh(g,MAT.paint||MAT.model);body.castShadow=true;grp.add(body);
   const lights=new THREE.Mesh(carLightGeo(type),lightMat({}));grp.add(lights);
-  return{grp,body,lights,L:T.L,W:T.W,H:T.H,type,st:-1};}
+  const m={grp,body,lights,L:T.L,W:T.W,H:T.H,type,st:-1,color};if(typeof carAssetApply==='function')carAssetApply(m);// 読み込んだ3Dモデルがあれば差し替える（04b）
+  return m;}
 function setCarLights(c,st){// st:{brake,turnL,turnR,head,beacon,blink}
   const s={head:st.head,brake:st.brake,tail:st.head,tl:st.turnL&&st.blink,tr:st.turnR&&st.blink,beacon:st.beacon&&st.blink,beacon2:st.beacon&&!st.blink,rev:st.rev};
   const key=(s.head?1:0)|(s.brake?2:0)|(s.tl?4:0)|(s.tr?8:0)|(s.beacon?16:0)|(s.beacon2?32:0)|(s.tail?64:0)|(s.rev?128:0);if(c.st===key)return;c.st=key;c.lights.material=lightMat(s);}
@@ -2824,6 +2828,56 @@ function makeTrainCar(cab,stripe=0x1f8a6d){const L=19.5,W=2.9,H=3.6;const P=[{g:
   if(cab)P.push({g:'box',x:0,y:2.7,z:-L/2-0.01,sx:W-0.6,sy:1.1,sz:0.05,c:0x1b2128});
   const g=mergeParts(P);const m=new THREE.Mesh(g,MAT.model);m.castShadow=true;return m;}
 
+
+// ===== 04b_carassets.js : 車の3Dモデル（assets/cars/*.glb）を読み込み、生成した形（04_models.js）と差し替える =====
+// - 起動後に裏で読み込む。読み込めない（オフライン・file:// で開いた・古いブラウザ）ときは、今までの生成した形のまま動く
+// - 当たり判定・物理の寸法（CARTYPES の L/W/H）は変えない。モデルは同じ寸法で作ってある（tools/cars/gen_cars.py）
+// - ライトは GLB の light_<種類>_<LOD>_<番号> という名前のメッシュをひとつにまとめ、ltype 属性で種類を伝える（04_models.js の lightMat と同じ仕組み）
+// - 近く用（_0）と遠く用（_1）の2段階。品質「低」ではいつも遠く用
+const CARASSET={base:'assets/',kinds:['kei','compact','sedan','van','suv','taxi','police','amb','truck','big','bus'],loader:null,geo:{},models:new Set(),state:'idle',paint:new Map(),loaded:0,errors:0};
+const CARLT={head:0,tail:1,turnL:2,turnR:3,beacon:4,marker:5,rev:6};
+function carAssetsStart(){if(CARASSET.state!=='idle')return;
+  // 確認版（1ファイル）では、読み込みの部品とモデルをページに埋め込んでおける：window.__CARASSET_INLINE={urls:{kind:dataURL}}
+  const inl=window.__CARASSET_INLINE;if(inl&&inl.urls&&THREE.GLTFLoader&&typeof MeshoptDecoder!=='undefined'){CARASSET.urls=inl.urls;CARASSET.state='loading';const L=new THREE.GLTFLoader();L.setMeshoptDecoder(MeshoptDecoder);CARASSET.loader=L;for(const k of CARASSET.kinds)carAssetLoad(k);return;}
+  if(location.protocol==='file:'){CARASSET.state='off';return;}CARASSET.state='loading';
+  const load=(src)=>new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.async=true;s.onload=res;s.onerror=()=>rej(new Error('script '+src));document.head.appendChild(s);});
+  load(CARASSET.base+'lib/GLTFLoader.js').then(()=>load(CARASSET.base+'lib/meshopt_decoder.js')).then(()=>{const L=new THREE.GLTFLoader();L.setMeshoptDecoder(MeshoptDecoder);CARASSET.loader=L;for(const k of CARASSET.kinds)carAssetLoad(k);})
+    .catch((e)=>{CARASSET.state='off';console.warn('car assets: off',e&&e.message);});}
+function carAssetLoad(kind){const url=CARASSET.urls?CARASSET.urls[kind]:CARASSET.base+'cars/'+kind+'.glb';if(!url){CARASSET.errors++;carAssetDone();return;}CARASSET.loader.load(url,(g)=>{try{CARASSET.geo[kind]=carAssetParse(g.scene);CARASSET.loaded++;carAssetUpgradeAll(kind);}catch(e){CARASSET.errors++;console.warn('car asset',kind,e&&e.message);}carAssetDone();},undefined,()=>{CARASSET.errors++;carAssetDone();});}
+function carAssetDone(){if(CARASSET.loaded+CARASSET.errors>=CARASSET.kinds.length)CARASSET.state=CARASSET.loaded?'ready':'off';}
+function carAssetsReady(){return CARASSET.state==='ready'||CARASSET.state==='off';}
+// 属性を float に（量子化された法線・色をそのまま行列で変換しないため）
+function attrToFloat(a){if(!a||a.array instanceof Float32Array)return a;const n=a.count*a.itemSize;const f=new Float32Array(n);const arr=a.array;const norm=a.normalized;
+  const mx=arr instanceof Int8Array?127:arr instanceof Uint8Array?255:arr instanceof Int16Array?32767:arr instanceof Uint16Array?65535:1;for(let i=0;i<n;i++)f[i]=norm?Math.max(-1,arr[i]/mx):arr[i];return new THREE.BufferAttribute(f,a.itemSize);}
+function bakeGeo(o){let g=o.geometry;const m=o.matrixWorld;const ident=m.elements.every((v,i)=>Math.abs(v-((i%5)===0?1:0))<1e-6);
+  if(!ident){g=g.clone();for(const k of['position','normal','color'])if(g.attributes[k])g.setAttribute(k,attrToFloat(g.attributes[k]));g.applyMatrix4(m);}
+  g.computeBoundingSphere();return g;}
+function carAssetParse(root){root.updateMatrixWorld(true);const out={body:[null,null],detail:[null,null],lights:null};const lt=[];
+  root.traverse((o)=>{if(!o.isMesh)return;const nm=o.name||'';
+    if(nm.startsWith('body_'))out.body[+nm[5]]=bakeGeo(o);else if(nm.startsWith('detail_'))out.detail[+nm[7]]=bakeGeo(o);
+    else if(nm.startsWith('light_')){const p=nm.split('_');if(p[2]!=='0')return;const t=CARLT[p[1]];if(t===undefined)return;lt.push({g:bakeGeo(o),t});}});
+  if(!out.body[0]||!out.detail[0]||!lt.length)throw new Error('incomplete glb');
+  // ライトをひとつの形にまとめ、種類を ltype 属性に入れる
+  const P=[],N=[],T=[];for(const{g,t}of lt){const ng=g.index?g.toNonIndexed():g;const p=attrToFloat(ng.attributes.position),n=attrToFloat(ng.attributes.normal);
+    for(let i=0;i<p.count;i++){P.push(p.getX(i),p.getY(i),p.getZ(i));N.push(n?n.getX(i):0,n?n.getY(i):1,n?n.getZ(i):0);T.push(t);}}
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));g.setAttribute('ltype',new THREE.Float32BufferAttribute(T,1));g.computeBoundingSphere();out.lights=g;
+  return out;}
+// 塗装色ごとの材質（MAT.paint と同じ設定。頂点色は使わない）
+function carPaint(color){let m=CARASSET.paint.get(color);if(m)return m;m=MAT.paint.clone();m.vertexColors=false;m.color.copy(C(color));CARASSET.paint.set(color,m);return m;}
+// 天候が変わって映り込み（envMap）が変わったとき
+function carPaintEnv(tex){for(const m of CARASSET.paint.values()){const had=!!m.envMap;m.envMap=tex;if(had!==!!tex)m.needsUpdate=true;}}
+// makeCar が作った車（m）を、読み込んだ形に差し替える。まだ読み込めていなければ覚えておく
+function carAssetApply(m){if(CARASSET.state==='off')return false;const A=CARASSET.geo[m.type];if(!A){CARASSET.models.add(m);return false;}if(m.glb)return true;
+  m.grp.remove(m.body);m.grp.remove(m.lights);const paint=carPaint(m.color);
+  const b0=new THREE.Mesh(A.body[0],paint);b0.castShadow=true;const d0=new THREE.Mesh(A.detail[0],MAT.model);d0.castShadow=true;
+  const b1=A.body[1]?new THREE.Mesh(A.body[1],paint):null;const d1=A.detail[1]?new THREE.Mesh(A.detail[1],MAT.model):null;
+  const lights=new THREE.Mesh(A.lights,lightMat({}));m.grp.add(b0);m.grp.add(d0);m.grp.add(lights);
+  if(b1&&d1){b1.castShadow=true;d1.castShadow=true;b1.visible=false;d1.visible=false;m.grp.add(b1);m.grp.add(d1);}
+  m.body=b0;m.lights=lights;m.st=-1;m.glb={b0,d0,b1,d1,lod:0};return true;}
+function carAssetUpgradeAll(kind){for(const m of CARASSET.models){if(!m.grp.parent){CARASSET.models.delete(m);continue;}if(m.type!==kind)continue;carAssetApply(m);CARASSET.models.delete(m);}}
+// 近く用・遠く用の切り替え（07b の cullTick から。d2 は視点からの距離の2乗）
+function carAssetLod(m,d2){const G=m.glb;if(!G||!G.b1)return;const far=ENV.q==='low'||d2>(ENV.q==='high'?90*90:55*55);const lod=far?1:0;if(lod===G.lod)return;G.lod=lod;
+  G.b0.visible=G.d0.visible=lod===0;G.b1.visible=G.d1.visible=lod===1;m.body=lod===0?G.b0:G.b1;}
 
 // ===== 05_signals.js : 信号機・踏切・電車 =====
 const SIGS=new Map(),XINGS=[];let TRAIN=null;
@@ -3439,14 +3493,14 @@ function distToOBB(o,x,z){const f=fwd(o.h),r=rightV(o.h);const dx=x-o.x,dz=z-o.z
 let renderer,camera,cockpit,wheelSpin,orthoCam,mirScene,sun,hemi,skyMesh,rainMesh,envRT=null,pmrem=null;const MIR={};let viewMode='cockpit';let frameNo=0;
 const ENV={mode:'day',shake:0,dark:false,tunnel:0,q:'high'};
 const VIEW={pr:1,prMax:1.5,ft:[],lastAdj:0,rearCam:null};
-function initRenderer(quality){const canvas=document.getElementById('gl');const low=quality==='low';ENV.q=quality;
+function initRenderer(quality){const canvas=document.getElementById('gl');const low=quality==='low';ENV.q=quality;const shadows=!low&&!(typeof SETTINGS!=='undefined'&&SETTINGS.shadow===false);// 設定「影」をオフにすると影なし
   renderer=new THREE.WebGLRenderer({canvas,antialias:!low,powerPreference:'high-performance'});VIEW.prMax=Math.min(window.devicePixelRatio||1,quality==='high'?1.75:quality==='mid'?1.25:1);VIEW.pr=VIEW.prMax;renderer.setPixelRatio(VIEW.pr);
   renderer.outputEncoding=THREE.sRGBEncoding;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.0;
   MAXANISO=Math.min(8,renderer.capabilities.getMaxAnisotropy());
-  renderer.shadowMap.enabled=!low;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled=shadows;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   camera=new THREE.PerspectiveCamera(62,1,0.08,2200);camera.layers.enable(1);camera.rotation.order='YXZ';
   hemi=new THREE.HemisphereLight(0xdfeeff,0x6d6555,0.75);scene.add(hemi);
-  sun=new THREE.DirectionalLight(0xfff1dc,2.4);sun.castShadow=!low;const ms=quality==='high'?2048:1024;sun.shadow.mapSize.set(ms,ms);const sc=sun.shadow.camera;sc.left=-75;sc.right=75;sc.top=75;sc.bottom=-75;sc.near=10;sc.far=400;sun.shadow.bias=-0.0005;sun.shadow.normalBias=0.03;
+  sun=new THREE.DirectionalLight(0xfff1dc,2.4);sun.castShadow=shadows;const ms=quality==='high'?2048:1024;sun.shadow.mapSize.set(ms,ms);const sc=sun.shadow.camera;sc.left=-75;sc.right=75;sc.top=75;sc.bottom=-75;sc.near=10;sc.far=400;sun.shadow.bias=-0.0005;sun.shadow.normalBias=0.03;
   scene.add(sun);scene.add(sun.target);scene.fog=new THREE.Fog(0xdbe6ec,160,900);
   orthoCam=new THREE.OrthographicCamera(-1,1,1,-1,0,2);mirScene=new THREE.Scene();
   for(const[k,w,h,fov]of[['rear',512,150,22],['L',256,160,32],['R',256,160,32],['cam',384,256,110]]){const rt=new THREE.WebGLRenderTarget(w,h,{stencilBuffer:true});rt.texture.encoding=THREE.sRGBEncoding;
@@ -3489,7 +3543,7 @@ function placeCams(dt){const p=PLAYER;const f=fwd(p.h),r=rightV(p.h);const y=p.y
   MIR.L.cam.position.set(p.x-r.x*0.98+f.x*0.5,y+1.06,p.z-r.z*0.98+f.z*0.5);MIR.L.cam.rotation.set(-0.06,-(p.h+Math.PI+0.2),0);
   MIR.R.cam.position.set(p.x+r.x*0.98+f.x*0.5,y+1.06,p.z+r.z*0.98+f.z*0.5);MIR.R.cam.rotation.set(-0.06,-(p.h+Math.PI-0.12),0);
   MIR.cam.cam.position.set(p.x-f.x*(p.L/2+0.05),y+1.05,p.z-f.z*(p.L/2+0.05));MIR.cam.cam.rotation.set(-0.62,-(p.h+Math.PI),0);
-  sun.position.set(p.x+80,y+120,p.z+50);sun.target.position.set(p.x,y,p.z);if(skyMesh)skyMesh.position.set(camera.position.x,0,camera.position.z);
+  sun.position.set(p.x+80,y+120,p.z+50);sun.target.position.set(p.x,y,p.z);if(skyMesh){skyMesh.position.set(camera.position.x,0,camera.position.z);const co=skyMesh.material.uniforms.cloudOff.value;co.x+=dt*0.0004;co.y+=dt*0.00015;}// 雲がゆっくり流れる
   if(rainMesh&&rainMesh.visible){rainMesh.position.set(camera.position.x,y,camera.position.z);const a=rainMesh.geometry.attributes.position;for(let i=0;i<a.count;i+=2){let yy=a.getY(i)-dt*22;if(yy<0)yy+=14;a.setY(i,yy);a.setY(i+1,yy+0.5);}a.needsUpdate=true;}}
 // ---- 遠くの細かい物（路面の表示・標識・看板・街灯・遠くの車など）は描かない：描画の負荷を下げる（霧で見えにくい距離） ----
 const CULL={list:[],t:0,off:false};
@@ -3499,8 +3553,9 @@ function cullBuild(){CULL.list.length=0;CULL.off=false;const th={mark:300,lamp:3
 function cullTick(){if(!STAGE.running){if(CULL.off)return;CULL.off=true;for(const e of CULL.list)e.o.visible=true;for(const v of VEH)if(!v.hidden)v.m.grp.visible=true;return;}CULL.off=false;
   CULL.t=(CULL.t+1)%4;if(CULL.t!==0)return;const P=camera.position;
   for(const e of CULL.list){const dx=e.c.x-P.x,dz=e.c.z-P.z;e.o.visible=Math.sqrt(dx*dx+dz*dz)-e.r<e.d;}
-  for(const v of VEH){if(v.hidden)continue;const dx=v.x-P.x,dz=v.z-P.z;v.m.grp.visible=dx*dx+dz*dz<420*420;}}
-function renderAll(showMirrors){const W=window.innerWidth,H=window.innerHeight;renderer.setRenderTarget(null);renderer.setScissorTest(false);renderer.setViewport(0,0,W,H);
+  for(const v of VEH){if(v.hidden)continue;const dx=v.x-P.x,dz=v.z-P.z;const d2=dx*dx+dz*dz;v.m.grp.visible=d2<420*420;if(v.m.glb)carAssetLod(v.m,d2);}}
+function renderAll(showMirrors){if(renderer.getContext().isContextLost())return;// 中断中は描かない（中断のイベントが届く前の一瞬も含む）
+  const W=window.innerWidth,H=window.innerHeight;renderer.setRenderTarget(null);renderer.setScissorTest(false);renderer.setViewport(0,0,W,H);
   const body=PLAYER&&PLAYER.model.grp;if(body)body.visible=viewMode!=='cockpit';renderer.render(scene,camera);if(body)body.visible=true;
   const camOn=MIR.cam.el&&!MIR.cam.el.hidden;if(!showMirrors&&!camOn)return;frameNo++;const list=[];if(showMirrors)list.push(...(frameNo%2?['rear']:['L','R']));if(camOn)list.push('cam');
   for(const k of list){const m=MIR[k];if(!m.el||m.el.hidden)continue;if(body)body.visible=k!=='rear'&&k!=='cam';renderer.setRenderTarget(m.rt);renderer.render(scene,m.cam);}if(body)body.visible=true;
@@ -3526,25 +3581,31 @@ function adaptRes(dt){if(!renderer)return;VIEW.ft.push(dt);if(VIEW.ft.length<45)
   let pr=VIEW.pr;if(avg>1/26&&pr>0.6)pr=Math.max(0.6,pr-0.15);else if(avg<1/52&&pr<VIEW.prMax)pr=Math.min(VIEW.prMax,pr+0.1);if(Math.abs(pr-VIEW.pr)>0.01){VIEW.pr=pr;renderer.setPixelRatio(pr);resizeView();}}
 // ---- 空 ----
 const SKY={top:new THREE.Color(),hor:new THREE.Color(),sun:new THREE.Vector3(0.45,0.6,0.35)};
+// 空：グラデーション＋太陽＋雲（雲は値ノイズ。cloudAmt=0 なら描かない。品質「低」では 0）
 function buildSky(){const g=new THREE.SphereGeometry(1800,32,16);const m=new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,
-    uniforms:{top:{value:new THREE.Color(0x4f8fd0)},hor:{value:new THREE.Color(0xd9e6ee)},bot:{value:new THREE.Color(0x9fb0a6)},sunDir:{value:SKY.sun},sunCol:{value:new THREE.Color(0xfff2d8)},sunAmt:{value:1}},
+    uniforms:{top:{value:new THREE.Color(0x4f8fd0)},hor:{value:new THREE.Color(0xd9e6ee)},bot:{value:new THREE.Color(0x9fb0a6)},sunDir:{value:SKY.sun},sunCol:{value:new THREE.Color(0xfff2d8)},sunAmt:{value:1},
+      cloudAmt:{value:0},cloudCol:{value:new THREE.Color(0xffffff)},cloudDark:{value:new THREE.Color(0xb8c4cc)},cloudOff:{value:new THREE.Vector2(0,0)},cloudCov:{value:0.55},cloudTex:{value:typeof cloudTex==='function'?cloudTex():null}},
     vertexShader:'varying vec3 vP;void main(){vP=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-    fragmentShader:`uniform vec3 top,hor,bot,sunCol;uniform vec3 sunDir;uniform float sunAmt;varying vec3 vP;
+    fragmentShader:`uniform vec3 top,hor,bot,sunCol,cloudCol,cloudDark;uniform vec3 sunDir;uniform float sunAmt,cloudAmt,cloudCov;uniform vec2 cloudOff;uniform sampler2D cloudTex;varying vec3 vP;
       void main(){float y=vP.y;vec3 c=y>0.0?mix(hor,top,pow(clamp(y,0.0,1.0),0.55)):mix(hor,bot,clamp(-y*4.0,0.0,1.0));float s=max(dot(normalize(vP),normalize(sunDir)),0.0);
+      if(cloudAmt>0.001&&y>0.01){vec2 cp=vP.xz/(y+0.12)*0.11+cloudOff;vec2 nn=texture2D(cloudTex,cp).rg;// 雲の模様はあらかじめ描いた画像（07c）。r:形 g:明るさ
+        float cl=smoothstep(cloudCov,cloudCov+0.22,nn.r)*cloudAmt*smoothstep(0.0,0.2,y);
+        float lit=0.55+0.45*nn.g;c=mix(c,mix(cloudDark,cloudCol,lit),cl);}
       c+=sunCol*(pow(s,600.0)*4.0+pow(s,12.0)*0.25)*sunAmt;gl_FragColor=vec4(c,1.0);\n#include <tonemapping_fragment>\n#include <encodings_fragment>\n}`});
   const sky=new THREE.Mesh(g,m);sky.renderOrder=-10;sky.frustumCulled=false;scene.add(sky);return sky;}
 // 遠くの山並み（地図ごとに色を変える）
 function buildHills(B,cx,cz,R0,n,cols){const r=rng(5);for(let i=0;i<n;i++){const a=i/n*Math.PI*2+r()*0.1,d=R0+r()*R0*0.2;const h=60+r()*140,w=200+r()*180;
     const m4=new THREE.Matrix4().compose(new V3(cx+Math.cos(a)*d,h/2-8,cz+Math.sin(a)*d),new THREE.Quaternion(),new V3(w,h,w*0.8));B.addGeo('hill',GEO.cone,m4,pick(cols||[0x6e8a6a,0x7b9478,0x667f6a],r));}}
 // ---- 天候・時間帯 ----
-const ENVDEF={day:{fog:0xdbe6ec,n:160,f:900,h:0.75,s:2.4,top:0x4f8fd0,hor:0xd9e6ee,sunAmt:1,sunCol:0xfff1dc,mu:1,exp:1.0},
-  evening:{fog:0xe7c4a0,n:130,f:700,h:0.55,s:1.6,top:0x6b7fb3,hor:0xf0b98a,sunAmt:1.4,sunCol:0xffb070,mu:1,exp:1.05,sunY:0.12},
-  night:{fog:0x0b111d,n:30,f:330,h:0.12,s:0.05,top:0x070b16,hor:0x1a2236,sunAmt:0,sunCol:0x223355,mu:1,exp:1.25,dark:true},
-  rain:{fog:0x8c969c,n:14,f:170,h:0.55,s:0.5,top:0x7d8a93,hor:0xa2abb0,sunAmt:0,sunCol:0xffffff,mu:0.72,exp:1.0},
+const ENVDEF={day:{fog:0xdbe6ec,n:160,f:900,h:0.75,s:2.4,top:0x4f8fd0,hor:0xd9e6ee,sunAmt:1,sunCol:0xfff1dc,mu:1,exp:1.0,cloud:{amt:0.9,cov:0.56,col:0xffffff,dark:0xb9c6d0}},
+  evening:{fog:0xe7c4a0,n:130,f:700,h:0.55,s:1.6,top:0x6b7fb3,hor:0xf0b98a,sunAmt:1.4,sunCol:0xffb070,mu:1,exp:1.05,sunY:0.12,cloud:{amt:0.85,cov:0.58,col:0xffc9a0,dark:0x8a7a90}},
+  night:{fog:0x0b111d,n:30,f:330,h:0.12,s:0.05,top:0x070b16,hor:0x1a2236,sunAmt:0,sunCol:0x223355,mu:1,exp:1.25,dark:true,cloud:{amt:0.7,cov:0.6,col:0x2a3348,dark:0x10151f}},
+  rain:{fog:0x8c969c,n:14,f:170,h:0.55,s:0.5,top:0x7d8a93,hor:0xa2abb0,sunAmt:0,sunCol:0xffffff,mu:0.72,exp:1.0,cloud:{amt:1.0,cov:0.3,col:0x9aa5ab,dark:0x6e7980}},
   fog:{fog:0xc2c8cb,n:4,f:62,h:0.6,s:0.5,top:0xc2c8cb,hor:0xc8cdd0,sunAmt:0,sunCol:0xffffff,mu:0.85,exp:1.0,dark:true}};
 function setEnv(mode){ENV.mode=mode;const W=ENVDEF[mode]||ENVDEF.day;ENV.dark=!!W.dark;
   const fm=(NET.map&&NET.map.fogMul)||1;scene.fog.color.copy(C(W.fog));scene.fog.near=W.n*(W.dark&&mode==='fog'?1:fm);scene.fog.far=Math.min(2100,W.f*(mode==='fog'?1:fm));hemi.intensity=W.h;sun.intensity=W.s;sun.color.copy(C(W.sunCol));renderer.toneMappingExposure=W.exp;
-  if(skyMesh){const u=skyMesh.material.uniforms;u.top.value.copy(C(W.top));u.hor.value.copy(C(W.hor));u.bot.value.copy(C(W.hor)).multiplyScalar(0.8);u.sunAmt.value=W.sunAmt;u.sunCol.value.copy(C(W.sunCol));}
+  if(skyMesh){const u=skyMesh.material.uniforms;u.top.value.copy(C(W.top));u.hor.value.copy(C(W.hor));u.bot.value.copy(C(W.hor)).multiplyScalar(0.8);u.sunAmt.value=W.sunAmt;u.sunCol.value.copy(C(W.sunCol));
+    const cl=W.cloud||{amt:0};u.cloudAmt.value=ENV.q==='low'||!u.cloudTex.value?0:(cl.amt||0);u.cloudCov.value=cl.cov!==undefined?cl.cov:0.55;u.cloudCol.value.copy(C(cl.col||0xffffff));u.cloudDark.value.copy(C(cl.dark||0xb8c4cc));}
   SKY.sun.set(0.45,W.sunY||0.6,0.35).normalize();
   if(MAT.lamp)MAT.lamp.color.copy(C(W.dark||mode==='rain'?0xfff1c4:0x8a8a8a)).multiplyScalar(W.dark?2.0:1);
   for(let i=0;i<5;i++)if(MAT['fac'+i])MAT['fac'+i].emissive.copy(C(0xffffff)).multiplyScalar(mode==='night'?0.95:mode==='evening'?0.25:0);
@@ -3553,7 +3614,8 @@ function setEnv(mode){ENV.mode=mode;const W=ENVDEF[mode]||ENVDEF.day;ENV.dark=!!
   if(NET.map&&NET.map.onEnv)NET.map.onEnv(mode);
   renderer.setClearColor(C(W.fog));if(PLAYER)PLAYER.mu=W.mu;if(rainMesh)rainMesh.visible=mode==='rain';
   // 車の塗装に映る景色
-  try{if(envRT)envRT.dispose();const es=new THREE.Scene();const sk=buildSkyClone(W);es.add(sk);envRT=pmrem.fromScene(es,0.04);if(MAT.paint){MAT.paint.envMap=envRT.texture;MAT.paint.needsUpdate=true;}}catch(e){}}
+  try{if(envRT)envRT.dispose();const es=new THREE.Scene();const sk=buildSkyClone(W);es.add(sk);envRT=pmrem.fromScene(es,0.04);if(MAT.paint){MAT.paint.envMap=envRT.texture;MAT.paint.needsUpdate=true;}}catch(e){}
+  if(typeof visualEnv==='function')visualEnv(mode,W);}
 function buildSkyClone(W){const g=new THREE.SphereGeometry(100,24,12);const col=[];const P=g.attributes.position;const top=C(W.top),hor=C(W.hor);const bot=C(0x5a5a55);
   for(let i=0;i<P.count;i++){const y=P.getY(i)/100;const c=y>0?hor.clone().lerp(top,Math.pow(y,0.6)):hor.clone().lerp(bot,Math.min(1,-y*3));col.push(c.r,c.g,c.b);}g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
   return new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide}));}
@@ -3563,6 +3625,51 @@ function buildRain(){const N=2400,P=[];for(let i=0;i<N;i++){const x=(Math.random
 function tunnelLight(dt){const p=PLAYER;let inside=0;const q=p&&p.loc;if(q&&q.kind==='road'){for(const t of q.road.tunnels){if(q.s>t.s0&&q.s<t.s1)inside=1;}}
   ENV.tunnel+=(inside-ENV.tunnel)*Math.min(1,dt*2.5);const W=ENVDEF[ENV.mode]||ENVDEF.day;hemi.intensity=W.h*(1-ENV.tunnel*0.75)+ENV.tunnel*0.12;sun.intensity=W.s*(1-ENV.tunnel);}
 
+
+// ===== 07c_visual.js : 見た目の強化（素材なし・描画だけ）。運転の物理・採点には触れない =====
+// - 建物の壁：足もと（地面から約3.5m）を暗くして、角の陰（アンビエントオクルージョン）のように見せる
+// - 路面：品質「高」では凹凸（法線マップ）つきの材質。雨では濡れて光る
+// - 車の塗装：品質「高」ではクリアコート（つやのある塗装）
+// - 空：雲（07b_view.js の空のシェーダーで描く。ここでは量だけ決める）
+const VIS={q:'high',roadStd:null,roadLam:null};
+// 建物の壁の足もとを暗くする（uv の縦方向 v は「階数」単位：0が地面。v=1.15（約3.5m）までを暗くする）
+function facadeAO(mat){mat.onBeforeCompile=(sh)=>{sh.fragmentShader=sh.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\n#ifdef USE_UV\n diffuseColor.rgb*=mix(0.6,1.0,smoothstep(0.0,1.15,vUv.y));\n#endif');};mat.customProgramCacheKey=()=>'facAO';}
+// アスファルトの凹凸（高さ）から法線マップを作る
+function asphaltNormalTex(){const N=512;const c=cvs(N,N),x=c.getContext('2d');x.fillStyle='#808080';x.fillRect(0,0,N,N);const r=rng(23);
+  // 高さ：粒（細かい凹凸）＋ゆるいうねり＋ひび
+  const hgt=new Float32Array(N*N);for(let i=0;i<N*N;i++)hgt[i]=0.5;
+  for(let k=0;k<70000;k++){const px=(r()*N)|0,py=(r()*N)|0;const v=(r()-0.5)*0.9;const s=1+((r()*2)|0);for(let j=0;j<s;j++)for(let i=0;i<s;i++)hgt[((py+j)%N)*N+((px+i)%N)]+=v;}
+  for(let k=0;k<18;k++){const cx=r()*N,cy=r()*N,rad=30+r()*90,amp=(r()-0.5)*0.5;for(let y=0;y<N;y++)for(let xx=0;xx<N;xx++){let dx=Math.abs(xx-cx),dy=Math.abs(y-cy);dx=Math.min(dx,N-dx);dy=Math.min(dy,N-dy);const d=Math.hypot(dx,dy);if(d<rad)hgt[y*N+xx]+=amp*(1-d/rad);}}
+  for(let k=0;k<12;k++){let px=r()*N,py=r()*N;for(let j=0;j<60;j++){px+=r()*6-3;py+=r()*6-3;const ix=((px|0)%N+N)%N,iy=((py|0)%N+N)%N;hgt[iy*N+ix]-=1.4;hgt[iy*N+((ix+1)%N)]-=0.7;}}
+  // 法線（周期境界）
+  const img=x.createImageData(N,N);const d=img.data;const str=0.9;
+  for(let y=0;y<N;y++)for(let xx=0;xx<N;xx++){const L=hgt[y*N+((xx-1+N)%N)],Rr=hgt[y*N+((xx+1)%N)],U=hgt[((y-1+N)%N)*N+xx],D=hgt[((y+1)%N)*N+xx];
+    let nx=-(Rr-L)*str,ny=-(D-U)*str,nz=1;const l=Math.hypot(nx,ny,nz);nx/=l;ny/=l;nz/=l;const o=(y*N+xx)*4;d[o]=(nx*0.5+0.5)*255;d[o+1]=(-ny*0.5+0.5)*255;d[o+2]=(nz*0.5+0.5)*255;d[o+3]=255;}
+  x.putImageData(img,0,0);return texFrom(c,true,false);}
+// 雲の模様（繰り返す画像。r：雲の形（値ノイズを重ねたもの）、g：明るさ）。空のシェーダー（07b）が参照する
+let CLOUDTEX=null;
+function cloudTex(){if(CLOUDTEX)return CLOUDTEX;const N=512;const c=cvs(N,N),x=c.getContext('2d');const r=rng(31);
+  // 値ノイズ（周期境界）：格子の乱数を補間
+  const oct=(sz)=>{const g=new Float32Array(sz*sz);for(let i=0;i<g.length;i++)g[i]=r();const f=new Float32Array(N*N);const sm=(t)=>t*t*(3-2*t);
+    for(let y=0;y<N;y++){const gy=y/N*sz,iy=Math.floor(gy),fy=sm(gy-iy),iy1=(iy+1)%sz;for(let xx=0;xx<N;xx++){const gx=xx/N*sz,ix=Math.floor(gx),fx=sm(gx-ix),ix1=(ix+1)%sz;
+      const a=g[iy*sz+ix],b=g[iy*sz+ix1],cc=g[iy1*sz+ix],d=g[iy1*sz+ix1];f[y*N+xx]=(a+(b-a)*fx)+((cc+(d-cc)*fx)-(a+(b-a)*fx))*fy;}}return f;};
+  const o=[oct(4),oct(8),oct(16),oct(32),oct(64)];const img=x.createImageData(N,N);const d=img.data;
+  for(let i=0;i<N*N;i++){const n=0.5*o[0][i]+0.25*o[1][i]+0.125*o[2][i]+0.0625*o[3][i]+0.03*o[4][i];const lit=0.5*o[1][i]+0.3*o[2][i]+0.2*o[3][i];
+    d[i*4]=Math.min(255,n*255);d[i*4+1]=Math.min(255,lit*255);d[i*4+2]=0;d[i*4+3]=255;}
+  x.putImageData(img,0,0);CLOUDTEX=texFrom(c,true,false);CLOUDTEX.minFilter=THREE.LinearMipMapLinearFilter;return CLOUDTEX;}
+// 起動時：材質を差し替える（品質ごと）。makeMaterials・modelMats のあとに呼ぶ
+function visualEnhance(q){VIS.q=q;
+  for(const k of['fac0','fac1','fac2','fac3','fac4','house'])if(MAT[k])facadeAO(MAT[k]);// 'wall' は高速道路の防音壁にも使われる（uvが0）ので対象外
+  if(q==='high'){
+    // 路面：凹凸つき。雨のときは setEnv で roughness を下げて濡れた見た目にする
+    VIS.roadLam=MAT.road;TEX.asphN=asphaltNormalTex();
+    MAT.road=new THREE.MeshStandardMaterial({vertexColors:true,map:TEX.asph,normalMap:TEX.asphN,normalScale:new THREE.Vector2(0.55,0.55),roughness:0.9,metalness:0.0,envMapIntensity:0.25});VIS.roadStd=MAT.road;
+    // 車の塗装：クリアコート
+    if(MAT.paint){const old=MAT.paint;MAT.paint=new THREE.MeshPhysicalMaterial({vertexColors:true,roughness:0.42,metalness:0.25,clearcoat:0.7,clearcoatRoughness:0.12,envMap:old.envMap||null,envMapIntensity:0.9});}}}
+// 天候が変わったとき（setEnv から）：路面の濡れ具合・路面の映り込み
+function visualEnv(mode,W){if(typeof carPaintEnv==='function')carPaintEnv(envRT?envRT.texture:null);const rd=VIS.roadStd;if(rd){const wet=mode==='rain';rd.roughness=wet?0.5:0.9;rd.metalness=0;rd.envMapIntensity=wet?0.7:0.25;rd.color.setScalar(wet?0.62:1);const had=!!rd.envMap;rd.envMap=envRT?envRT.texture:null;if(had!==!!rd.envMap)rd.needsUpdate=true;}
+  // 前照灯：路面が1画素ごとに照らされる材質（品質「高」）では、照らす範囲を絞って「光の溜まり」が見えるようにする
+  if(VIS.roadStd&&PLAYER&&PLAYER.headL){const L=PLAYER.headL;L.distance=75;L.decay=1.7;L.angle=0.52;L.penumbra=0.6;}}
 
 // ===== 08a_judge.js : 採点（位置・速度・信号・一時停止・交差点） =====
 const J={score:100,log:[],good:[],major:false,cool:{},A:null,N:null,started:false,t:0,limit:{v:30,legal:true},dangerT:-99,quake:false};
@@ -4310,8 +4417,9 @@ function showHelp(back){const touch=isTouch();
 function showSettings(back){const row=(id,label,val)=>`<label class="opt" for="${id}"><span>${label}</span><input type="checkbox" id="${id}" ${val?'checked':''}></label>`;
   ov(`<div class="card"><header><h2>設定</h2></header><div class="body">${row('sSound','効果音',SETTINGS.sound)}${row('sVoice','教官の音声案内（ブラウザの読み上げ）',SETTINGS.voice)}${row('sMir','ミラーを表示',SETTINGS.mirrors)}${row('sSide','狭い画面でもサイドミラーを表示',SETTINGS.sideOnPhone)}${row('sCam','バックモニター（シフトがRのとき）',SETTINGS.rearCam!==false)}${row('sShadow','影（再読み込み後に反映）',SETTINGS.shadow)}
     <label class="opt" for="sTouch"><span>タッチ操作パネル</span><select id="sTouch"><option value="auto">自動</option><option value="on">表示</option><option value="off">非表示</option></select></label>
-    <div class="btnRow"><button class="go" id="bOk">保存してもどる</button></div></div></div>`);$('sTouch').value=SETTINGS.touch;
-  $('bOk').onclick=()=>{SETTINGS.sound=$('sSound').checked;SETTINGS.voice=$('sVoice').checked;SETTINGS.mirrors=$('sMir').checked;SETTINGS.sideOnPhone=$('sSide').checked;SETTINGS.rearCam=$('sCam').checked;SETTINGS.shadow=$('sShadow').checked;SETTINGS.touch=$('sTouch').value;
+    <label class="opt" for="sQual"><span>画質（再読み込み後に反映）<br><small style="font-weight:400;color:#4d5d55">動きが重いときは「低」に。「高」は路面の凹凸・塗装のつや・雲・影つき</small></span><select id="sQual"><option value="auto">自動</option><option value="high">高</option><option value="mid">中</option><option value="low">低</option></select></label>
+    <div class="btnRow"><button class="go" id="bOk">保存してもどる</button></div></div></div>`);$('sTouch').value=SETTINGS.touch;$('sQual').value=SETTINGS.quality||'auto';
+  $('bOk').onclick=()=>{SETTINGS.sound=$('sSound').checked;SETTINGS.voice=$('sVoice').checked;SETTINGS.mirrors=$('sMir').checked;SETTINGS.sideOnPhone=$('sSide').checked;SETTINGS.rearCam=$('sCam').checked;SETTINGS.shadow=$('sShadow').checked;SETTINGS.touch=$('sTouch').value;SETTINGS.quality=$('sQual').value;
     store('mdk_settings',SETTINGS);SFX.setOn(SETTINGS.sound);VOICE.on=SETTINGS.voice;applyTouch();applyMirrors();back();};}
 function showAbout(){ov(`<div class="card"><header><h2>このゲームについて</h2></header><div class="body">
   <p class="lede">交通ルールの説明は、2026年10月時点で確認できた法令・公的機関の情報をもとにしています。法令は改正されることがあるため、実際の運転では道路標識・標示、警察官の指示、最新の公式情報に従ってください。</p>
@@ -5611,7 +5719,7 @@ function boot(data){
   if(typeof THREE==='undefined'){bootFail('three');return;}
   if(!webglOK()){bootFail('webgl');return;}
   const coarse=matchMedia('(pointer:coarse)').matches;const small=Math.min(screen.width,screen.height)<900;const q=SETTINGS.quality!=='auto'?SETTINGS.quality:(coarse&&small?'low':coarse?'mid':'high');
-  try{scene=new THREE.Scene();initGeo();makeMaterials();modelMats(null);signalMats();initRenderer(q);
+  try{scene=new THREE.Scene();initGeo();makeMaterials();modelMats(null);signalMats();visualEnhance(q);initRenderer(q);
     skyMesh=buildSky();buildRain();PERSIST.push(hemi,sun,sun.target,skyMesh,rainMesh,cockpit);
     makePlayer();PERSIST.push(PLAYER.model.grp,PLAYER.headL,PLAYER.headL.target);PLAYER.model.grp.visible=false;
     loadMap('town');setEnv('day');}
@@ -5622,13 +5730,13 @@ function boot(data){
   VOICE.on=SETTINGS.voice;buildControls();bindKeys();applyTouch();resizeView();window.addEventListener('resize',()=>{resizeView();applyMirrors();});
   $('btnPause').onclick=togglePause;$('btnCam').onclick=toggleView;$('btnSound').onclick=()=>{SETTINGS.sound=!SETTINGS.sound;SFX.init();SFX.setOn(SETTINGS.sound);store('mdk_settings',SETTINGS);toast('info',SETTINGS.sound?'サウンド オン':'サウンド オフ',0,'');};
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&STAGE.running&&!STAGE.paused&&!STAGE.over)togglePause();});
-  $('loadMsg').hidden=true;showMenu();requestAnimationFrame(frame);
+  $('loadMsg').hidden=true;showMenu();requestAnimationFrame(frame);carAssetsStart();// 車の3Dモデルは起動後に裏で読み込む（04b）
   window.__sim={STAGE,J,VEH,PEDS,SIGS,XINGS,XWALKS,NET,NAV,EVS,KEY,INPUT,startStage,act,locate,loadMap,
     step(n,dt=1/30){for(let i=0;i<n;i++){if(!STAGE.paused)simStep(dt);}if(STAGE.running){placeCams(dt);hudT=0;updateHud(dt);}},
     render(){if(STAGE.running){placeCams(0.016);cockpit.visible=viewMode==='cockpit';}renderPeds(0);CULL.t=3;cullTick();renderAll(STAGE.running&&viewMode==='cockpit'&&SETTINGS.mirrors);},
     renderAt(P,T){cockpit.visible=false;renderer.setRenderTarget(null);renderer.setScissorTest(false);renderer.setViewport(0,0,window.innerWidth,window.innerHeight);camera.position.set(P[0],P[1],P[2]);camera.lookAt(T[0],T[1],T[2]);renderPeds(0);if(skyMesh)skyMesh.position.set(camera.position.x,0,camera.position.z);sun.position.set(P[0]+80,(P[1]||0)+120,P[2]+50);sun.target.position.set(T[0],T[1],T[2]);renderer.render(scene,camera);},
     setView(m){viewMode=m;applyMirrors();},setEnv(m){setEnv(m);},get P(){return PLAYER;},get J2(){return J;},renderer:()=>renderer,camera:()=>camera,scene:()=>scene,dbgB:{BUILT,clearOfRoads,overlapsBuilt,CITYB:typeof CITYB!=='undefined'?CITYB:null},
-    SIGNS:()=>SIGNDATA,signCanvas:(id,px)=>signCanvas(id,px),signMissing:()=>signArtMissing(),auto(on,opts){AUTO.on=!!on;AUTO.agent=null;Object.assign(AUTO,opts||{});if(!on)INPUT.auto=null;},AUTO,STAGES,MAPS,dbg:()=>autoDbg(),planner:(l)=>autoPlanner(l),answer:()=>choiceAnswerOK(),dev:{locateDbg,isDrivable,drvAt,drvProject,corners,inNode,connAt,locate,makeDrivePath,obstAhead,laneGapAt,nearHazards,leaderOnPath,wantsExit,wantedDecel,tryLaneChange,parkTarget:()=>typeof PARK!=='undefined'&&PARK.target?{x:PARK.target.x,z:PARK.target.z,za:PARK.target.za,zb:PARK.target.zb}:null,streetParkJudge:()=>streetParkJudge(),PK:()=>JSON.parse(JSON.stringify(PK,(k,v)=>typeof v==='function'||(v&&v.var)?undefined:v))}};}
+    carAssets:()=>({state:CARASSET.state,loaded:CARASSET.loaded,errors:CARASSET.errors,ready:carAssetsReady()}),SIGNS:()=>SIGNDATA,signCanvas:(id,px)=>signCanvas(id,px),signMissing:()=>signArtMissing(),auto(on,opts){AUTO.on=!!on;AUTO.agent=null;Object.assign(AUTO,opts||{});if(!on)INPUT.auto=null;},AUTO,STAGES,MAPS,dbg:()=>autoDbg(),planner:(l)=>autoPlanner(l),answer:()=>choiceAnswerOK(),dev:{locateDbg,isDrivable,drvAt,drvProject,corners,inNode,connAt,locate,makeDrivePath,obstAhead,laneGapAt,nearHazards,leaderOnPath,wantsExit,wantedDecel,tryLaneChange,parkTarget:()=>typeof PARK!=='undefined'&&PARK.target?{x:PARK.target.x,z:PARK.target.z,za:PARK.target.za,zb:PARK.target.zb}:null,streetParkJudge:()=>streetParkJudge(),PK:()=>JSON.parse(JSON.stringify(PK,(k,v)=>typeof v==='function'||(v&&v.var)?undefined:v))}};}
 // フォントを待ってから起動（標識の文字のため）。フォントのCSSは起動を止めないよう media="print" で読み込んでいる（src/head.html）。
 // CSSは最大5秒待ち、読み込めたら画面にも使う。フォント本体はそのあと最大2.5秒待つ。間に合わなければフォントなしで起動する
 function fontCssReady(ms){const l=document.getElementById('fontCss');return new Promise(res=>{if(!l){res();return;}

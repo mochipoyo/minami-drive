@@ -86,5 +86,5 @@ Batch.prototype.wallBox=function(key,cx,cz,y0,sx,sy,sz,color,ry,uvW=3.2,uvH=3){c
     const q=[[A,y0,0,0],[Bq,y0,uu,0],[Bq,y0+sy,uu,vv],[A,y0,0,0],[Bq,y0+sy,uu,vv],[A,y0+sy,0,vv]];
     for(const[p,yy,u,v]of q)this._v(o,p.x,yy,p.z,nx,0,nz,c,u,v);}
   // 屋根（天面）
-  const tp=[T(-hx,-hz),T(hx,-hz),T(hx,hz),T(-hx,hz)];const tc=C(0x8d8a85);for(const[p,u,v]of[[tp[0],0,0],[tp[2],1,1],[tp[1],1,0],[tp[0],0,0],[tp[3],0,1],[tp[2],1,1]])this._v(o,p.x,y0+sy,p.z,0,1,0,tc,0,0);};
+  const tp=[T(-hx,-hz),T(hx,-hz),T(hx,hz),T(-hx,hz)];const tc=C(0x8d8a85);for(const[p,u,v]of[[tp[0],0,0],[tp[2],1,1],[tp[1],1,0],[tp[0],0,0],[tp[3],0,1],[tp[2],1,1]])this._v(o,p.x,y0+sy,p.z,0,1,0,tc,0,9);};// 屋根の v=9：壁の足もとを暗くする処理（07c）の対象外にする（テクスチャは繰り返しなので見た目は同じ）
 

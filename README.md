@@ -34,6 +34,8 @@ PC（キーボード）と、スマートフォン・タブレット（タッチ
 | Esc | 一時停止 |
 | G | 怒鳴る（特殊モードだけ。採点には影響しません） |
 
+設定の「画質」で、路面の凹凸・塗装のつや・雲・影のある「高」と、軽い「低」などを選べます（既定は自動。再読み込み後に反映）。
+
 マウスのドラッグで周りを見回せます。
 
 ### スマートフォン・タブレット
@@ -67,17 +69,21 @@ GitHub Free では、Pages を使えるのは Public のリポジトリだけで
 
 ## 手元で遊ぶ・改造する
 
-- `index.html` をブラウザで開くだけでも遊べます。three.js とフォントをネットから読み込むため、インターネット接続が必要です。
+- `index.html` をブラウザで開くだけでも遊べます。three.js とフォントをネットから読み込むため、インターネット接続が必要です。車の3Dモデル（`assets/`）は Web サーバーで配信したときだけ読み込まれ、`index.html` を直接開いたときや読み込めないときは、プログラムで生成した車の形で動きます。
+- 車の3Dモデルを作り直すには、Blender の Python モジュール（`pip install bpy`）と gltfpack（`cd tools/cars && npm install`）を入れて、`tools/cars/build.sh` を実行します（`tools/cars/gen_cars.py` が形を作り、gltfpack が圧縮して `assets/cars/` に置きます）。
 - 改造するときは `src/` のファイルを編集し、`python3 build.py` を実行してください。`index.html` が作り直されます（Python 3 の標準機能だけで動きます）。
 - 手元の Web サーバーで確かめる場合は、このフォルダで `python3 -m http.server 8000` を実行し、`http://localhost:8000/` を開きます。
 
 ## ファイル構成
 
 ```
-index.html      公開用のゲーム本体（これ1つで動きます）
+index.html      公開用のゲーム本体（これ1つで動きます。assets/ があると車が3Dモデルになります）
+assets/cars/    車の3Dモデル（glb。meshopt で圧縮。tools/cars で生成）
+assets/lib/     3Dモデルの読み込み部品（three.js r128 の GLTFLoader と meshopt のデコーダー）
 build.py        src/ から index.html を作るスクリプト
 src/head.html   画面の部品と見た目（CSS）
 src/js/         ゲームの処理（ファイル名の順につなげて index.html に入れます）
+tools/cars/     車の3Dモデルの生成（Blender の Python モジュール）と圧縮（gltfpack）
 screenshots/    この README の画像
 ```
 
