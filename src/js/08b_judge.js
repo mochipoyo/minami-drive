@@ -25,7 +25,10 @@ function collisionCheck(p){if(STAGE.over)return;
   const pb={x:p.x,z:p.z,h:p.h,L:p.L-0.16,W:p.W-0.12};// 車の角は丸いので、箱を少し小さくして判定
   for(const o of VEH){if(o.hidden||Math.abs(o.x-p.x)>12||Math.abs(o.z-p.z)>12||Math.abs((o.y||0)-(p.y||0))>3)continue;if(obbOverlap(pb,{x:o.x,z:o.z,h:o.h,L:o.L-0.16,W:o.W-0.12})){crash(o.kind==='bike'?'自転車と衝突しました。':o.type==='amb'?'緊急自動車と衝突しました。':'車と衝突しました。',o);return;}
     // 相手に急ブレーキを踏ませた：こちらが割り込んだ・急に減速した・右折で直進車を妨げたときだけ（相手の車間不足のせいなら数えない）
-    if(o.lastAcc<-4.2&&o.v>2&&!o.script){const lg=leaderOnPath(o,30);if(lg.obj===PLAYER){danger();if(J.N&&turnOf(J.N.h0,p.h)==='R')violate('yield37','',8);else if(J.mergeWatch&&J.t-J.mergeWatch.t<4)violate('mergeYield','',10);else if(J.t-J.lastLaneChange.t<4)violate('cutIn','',10);else if(J.t-(J.lastHardDec||-99)<2.5)violate('near','急な減速で、後ろの車に急ブレーキを踏ませました。',8);}}}
+    if(o.lastAcc<-4.2&&o.v>2&&!o.script){const lg=leaderOnPath(o,30);if(lg.obj===PLAYER){danger();
+        // 同じ脚から交差点に入ってきた車（後ろについて来ている車）が横断歩道などで急ブレーキをかけても、右折の妨げ（第37条）ではない
+        const sameLeg=!!(J.N&&((o.conn&&o.conn.node===J.N.n&&o.conn.from.inLeg===J.N.L)||(!o.conn&&o.lane&&o.lane.endNode()===J.N.n&&o.lane.entryLeg()===J.N.L)));
+        if(J.N&&turnOf(J.N.h0,p.h)==='R'&&!sameLeg)violate('yield37','',8);else if(J.mergeWatch&&J.t-J.mergeWatch.t<4)violate('mergeYield','',10);else if(J.t-J.lastLaneChange.t<4)violate('cutIn','',10);else if(J.t-(J.lastHardDec||-99)<2.5)violate('near','急な減速で、後ろの車に急ブレーキを踏ませました。',8);}}}
   for(const q of PEDS){if(q.mode==='off'||Math.abs(q.x-p.x)>7||Math.abs(q.z-p.z)>7)continue;const d=distToOBB(p,q.x,q.z);
     if(d<q.R){if(Math.abs(p.v)<0.3){if(!J.nearPeds.has(q)){J.nearPeds.add(q);}continue;}// 止まっている車に人が触れた：運転による事故ではない
       crash(q.kind==='kid'?'子どもと接触しました。':'歩行者と接触しました。');return;}

@@ -10,10 +10,11 @@ function evDeliveryTruck(r,s,dir){const o=parkCar(r,s,dir,'truck',{hazard:true,i
       if(d!==null&&d<-15&&!this.passed){this.passed=1;if(!J.log.some(x=>x.id==='laneBlink'&&J.t-x.t<20))praise('truckOK');}if(this.passed&&(d===null||d<-200))this.done=true;},cleanup(){removeObstacle(o);},
     lesson:'止まっている車を避けるときは、3秒前に合図を出し、ミラーと目で後ろを確かめてから進路を変えます。'};STAGE.lessonHint=e.lesson;return evAdd(e);}
 // 客を見つけたタクシーが、前で急に左に寄って止まる
-function evTaxiStop(){const p=PLAYER;const l=(p.lanesNow&&p.lanesNow.find(x=>x.kind==='main'))||null;if(!l)return null;const uP=l.uOf(p.loc.s);if(l.len-uP<72)return null;
-  const tx=new Veh('car','taxi');tx.place(l,uP+30);tx.v=Math.max(p.v,9);tx.evt=true;VEH.push(tx);let t=0,mode=0;const l0=l.road.lanes(l.dir)[0];
+// opt.min：この先の道路が最低これだけ残っているときだけ（既定 72m）。opt.ahead：タクシーを置く前方の距離（既定 30m）
+function evTaxiStop(opt={}){const p=PLAYER;const l=(p.lanesNow&&p.lanesNow.find(x=>x.kind==='main'))||null;if(!l)return null;const uP=l.uOf(p.loc.s);if(l.len-uP<(opt.min||72))return null;
+  const tx=new Veh('car','taxi');tx.place(l,uP+(opt.ahead||30));tx.v=Math.max(p.v,9);tx.evt=true;VEH.push(tx);let t=0,mode=0;const l0=l.road.lanes(l.dir)[0];
   tx.script=(v,dt)=>{t+=dt;const gap=Math.hypot(v.x-PLAYER.x,v.z-PLAYER.z);
-    if(mode===0){v.v+=clamp(Math.max(PLAYER.v,8)-v.v,-1,1)*dt;if((t>3&&gap<28)||t>6){mode=1;t=0;danger();if(v.lane!==l0){const s=v.lane.sOf(v.u);const tOld=v.lane.tAt(s)+v.d*v.lane.dir;v.lane=l0;v.u=l0.uOf(s);v.d=(tOld-l0.tAt(s))*l0.dir;}}}
+    if(mode===0){v.v+=clamp(Math.max(PLAYER.v,8)-v.v,-1,1)*dt;if((t>3&&gap<28)||t>(opt.wait||6)){mode=1;t=0;danger();if(v.lane!==l0){const s=v.lane.sOf(v.u);const tOld=v.lane.tAt(s)+v.d*v.lane.dir;v.lane=l0;v.u=l0.uOf(s);v.d=(tOld-l0.tAt(s))*l0.dir;}}}
     else if(mode===1){v.v=Math.max(0,v.v-5.2*dt);v.d+=clamp(-(l0.w/2-v.W/2-0.15)-v.d,-1.4*dt,1.4*dt);danger();if(v.v===0){mode=2;t=0;}}
     else if(mode===2&&t>9){mode=3;t=0;}
     else if(mode===3){v.v=Math.min(8,v.v+1.2*dt);v.d+=clamp(0-v.d,-0.6*dt,0.6*dt);if(t>6){v.script=null;}}
@@ -24,13 +25,14 @@ function evTaxiStop(){const p=PLAYER;const l=(p.lanesNow&&p.lanesNow.find(x=>x.k
       if(mode>=2&&!this.pr&&!STAGE.over){const f=fwd(tx.h);const ahead=(P.x-tx.x)*f.x+(P.z-tx.z)*f.z;if(ahead>tx.L/2+P.L/2+1||mode===3){this.pr=1;praise('taxiOK');}}
       if(tx.hidden)this.done=true;},cleanup(){tx.remove();}});}
 // 夜：横断歩道のない所を渡る歩行者（暗い服）
-function evJaywalker(r,s,dir){const ped=new Ped('suit');PEDS.push(ped);ped.reserved=true;const from=edgePos(r,s,-dir,-0.8),to=edgePos(r,s,dir,-1.2);ped.set(from.x,from.z);ped.y=from.y+0.15;ped.show(false);
+// opt.kind：歩行者の種類（既定 suit）。opt.lesson：結果画面の解説。opt.praise：うまくかわしたときの key。opt.spd：歩く速さ（m/s）
+function evJaywalker(r,s,dir,opt={}){const ped=new Ped(opt.kind||'suit');PEDS.push(ped);ped.reserved=true;const from=edgePos(r,s,-dir,-0.8),to=edgePos(r,s,dir,-1.2);ped.set(from.x,from.z);ped.y=from.y+0.15;ped.show(false);
   const e={ph:0,update(dt){const d0=distOnRoad(r,s,dir);const d=d0===null?null:d0-PLAYER.L/2;
       if(this.ph===0&&d!==null&&d<70&&d>0){this.ph=1;ped.show(true);ped.mode='script';ped.v=0;ped.h=headingOf(to.x-from.x,to.z-from.z);}
-      if(this.ph===1&&d!==null&&d<(PLAYER.v>8?42:30)&&d>0){this.ph=2;danger();ped.script=(k,dt2)=>{k.y=r.yAt(s);if(k.stepTo(to.x,to.z,1.35,dt2)){k.show(false);e.ph=3;}};}
+      if(this.ph===1&&d!==null&&d<(PLAYER.v>8?42:30)&&d>0){this.ph=2;danger();ped.script=(k,dt2)=>{k.y=r.yAt(s);if(k.stepTo(to.x,to.z,opt.spd||1.35,dt2)){k.show(false);e.ph=3;}};}
       if(this.ph===2)danger();
-      if(this.ph===3){if(!this.pr){this.pr=1;if(!STAGE.over)praise('nightPedOK');}const dd=distOnRoad(r,s,dir);if(dd===null||dd<-30)this.done=true;}},
-    cleanup(){ped.show(false);ped.reserved=false;},lesson:'夜は、暗い服の歩行者を見つけるのが遅れがちです。ライトの届く範囲で止まれる速度で走り、横断歩道のない所を渡る人もいると考えましょう。'};
+      if(this.ph===3){if(!this.pr){this.pr=1;if(!STAGE.over)praise(opt.praise||'nightPedOK');}const dd=distOnRoad(r,s,dir);if(dd===null||dd<-30)this.done=true;}},
+    cleanup(){ped.show(false);ped.reserved=false;},lesson:opt.lesson||'夜は、暗い服の歩行者を見つけるのが遅れがちです。ライトの届く範囲で止まれる速度で走り、横断歩道のない所を渡る人もいると考えましょう。'};
   STAGE.lessonHint=e.lesson;return evAdd(e);}
 // ---- スクランブル交差点の人波：歩行者用の青になる少し前から、角に人が集まる ----
 function scrambleTick(dt){const p=PLAYER;if(!p||!STAGE.running)return;for(const sg of SIGS.values()){if(!sg.def.scramble)continue;const n=sg.n;if(Math.hypot(n.x-p.x,n.z-p.z)>230)continue;
